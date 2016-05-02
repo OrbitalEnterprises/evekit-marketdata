@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<persistence
+    xmlns="http://java.sun.com/xml/ns/persistence"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://java.sun.com/xml/ns/persistence http://java.sun.com/xml/ns/persistence/persistence_2_0.xsd"
+    version="2.0">
+
+    <persistence-unit name="evekit-marketdata">
+        <description>
+            EveKit Market Data Configuration Properties
+        </description>
+        
+        <class>enterprises.orbital.db.DBProperty</class>
+        <class>enterprises.orbital.evekit.marketdata.Order</class>
+        <class>enterprises.orbital.evekit.marketdata.Instrument</class>
+
+        <properties>
+            <property name="javax.persistence.jdbc.driver" value="${enterprises.orbital.evekit.marketdata.db.driver}"/>
+            <property name="javax.persistence.jdbc.url" value="${enterprises.orbital.evekit.marketdata.db.url}"/>
+            <property name="javax.persistence.jdbc.user" value="${enterprises.orbital.evekit.marketdata.db.user}"/>
+            <property name="javax.persistence.jdbc.password" value="${enterprises.orbital.evekit.marketdata.db.password}"/>
+            <property name="hibernate.dialect" value="${enterprises.orbital.evekit.marketdata.db.dialect}"/>
+            <property name="hibernate.show_sql" value="false" />
+            <property name="hibernate.format_sql" value="false" />
+            
+            <property name="hibernate.c3p0.min_size" value="5"/>
+            <property name="hibernate.c3p0.max_size" value="20"/>
+            <property name="hibernate.c3p0.timeout" value="300"/>
+            <property name="hibernate.c3p0.max_statements" value="50"/>
+            <property name="hibernate.c3p0.idle_test_period" value="10000"/>
+        </properties>
+
+    </persistence-unit>
+
+</persistence>
