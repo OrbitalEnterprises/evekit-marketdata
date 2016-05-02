@@ -69,6 +69,9 @@ public class SchedulerApplication extends Application {
     OrbitalProperties.addPropertyFile("EveKitMarketdataScheduler.properties");
     // Sent persistence unit for properties
     PersistentProperty.setProvider(new DBPropertyProvider(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.MARKETDATA_PU_PROP)));
+    // Set agent if present
+    String agent = OrbitalProperties.getGlobalProperty("enterprises.orbital.evekit.marketdata.crest.agent", null);
+    if (agent != null) CRESTClient.setAgent(agent);
     // Schedule instrument map updater to run on a timer
     (new Thread(
         new MaintenanceRunnable(OrbitalProperties.getLongGlobalProperty(PROP_INSTRUMENT_UPDATE_INTERVAL, DEF_INSTRUMENT_UPDATE_INTERVAL), new Maintenance() {
