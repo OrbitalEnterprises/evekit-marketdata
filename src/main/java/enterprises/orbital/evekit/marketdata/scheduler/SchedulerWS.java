@@ -1,6 +1,8 @@
 package enterprises.orbital.evekit.marketdata.scheduler;
 
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
@@ -35,8 +37,9 @@ import io.swagger.annotations.ApiResponses;
     produces = "application/json",
     consumes = "application/json")
 public class SchedulerWS {
-  public static final String PROP_MIN_SCHED_INTERVAL = "enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval";
-  public static final long   DEF_MIN_SCHED_INTERVAL  = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
+  private static final Logger log                     = Logger.getLogger(SchedulerWS.class.getName());
+  public static final String  PROP_MIN_SCHED_INTERVAL = "enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval";
+  public static final long    DEF_MIN_SCHED_INTERVAL  = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
 
   @Path("/takenext")
   @GET
@@ -51,11 +54,20 @@ public class SchedulerWS {
           @ApiResponse(
               code = 404,
               message = "No instrument ready to be scheduled , try again later."),
+          @ApiResponse(
+              code = 500,
+              message = "Internal error"),
       })
   public Response takeNext(
                            @Context HttpServletRequest request) {
     long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
-    Instrument next = Instrument.takeNextScheduled(interval);
+    Instrument next;
+    try {
+      next = Instrument.takeNextScheduled(interval);
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    }
     if (next == null) return Response.status(Status.NOT_FOUND).build();
     return Response.ok().entity(next).build();
   }

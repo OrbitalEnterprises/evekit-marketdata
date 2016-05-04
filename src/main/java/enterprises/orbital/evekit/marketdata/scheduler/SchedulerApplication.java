@@ -14,6 +14,7 @@ import javax.ws.rs.core.Application;
 
 import enterprises.orbital.base.OrbitalProperties;
 import enterprises.orbital.base.PersistentProperty;
+import enterprises.orbital.db.ConnectionFactory.RunInVoidTransaction;
 import enterprises.orbital.db.DBPropertyProvider;
 import enterprises.orbital.evekit.marketdata.CRESTClient;
 import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
@@ -30,7 +31,7 @@ public class SchedulerApplication extends Application {
   public static final long   DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
 
   protected static interface Maintenance {
-    public void performMaintenance();
+    public boolean performMaintenance();
   }
 
   protected static class MaintenanceRunnable implements Runnable {
@@ -48,8 +49,7 @@ public class SchedulerApplication extends Application {
       while (true) {
         long now = OrbitalProperties.getCurrentTime();
         if (now - lastRun > updateInterval) {
-          action.performMaintenance();
-          lastRun = OrbitalProperties.getCurrentTime();
+          if (action.performMaintenance()) lastRun = OrbitalProperties.getCurrentTime();
         } else {
           try {
             Thread.sleep(updateInterval - (now - lastRun));
@@ -77,8 +77,8 @@ public class SchedulerApplication extends Application {
         new MaintenanceRunnable(OrbitalProperties.getLongGlobalProperty(PROP_INSTRUMENT_UPDATE_INTERVAL, DEF_INSTRUMENT_UPDATE_INTERVAL), new Maintenance() {
 
           @Override
-          public void performMaintenance() {
-            refreshInstrumentMap();
+          public boolean performMaintenance() {
+            return refreshInstrumentMap();
           }
 
         }))).start();
@@ -86,8 +86,8 @@ public class SchedulerApplication extends Application {
     (new Thread(new MaintenanceRunnable(OrbitalProperties.getLongGlobalProperty(PROP_STUCK_UPDATE_INTERVAL, DEF_STUCK_UPDATE_INTERVAL), new Maintenance() {
 
       @Override
-      public void performMaintenance() {
-        unstickInstruments();
+      public boolean performMaintenance() {
+        return unstickInstruments();
       }
 
     }))).start();
@@ -105,27 +105,38 @@ public class SchedulerApplication extends Application {
     return resources;
   }
 
-  protected void unstickInstruments() {
+  protected boolean unstickInstruments() {
     log.info("Checking for stuck instruments");
     long stuckDelay = OrbitalProperties.getLongGlobalProperty(PROP_STUCK_UPDATE_INTERVAL, DEF_STUCK_UPDATE_INTERVAL);
     // Retrieve current list of delayed instruments
     long threshold = OrbitalProperties.getCurrentTime() - stuckDelay;
-    for (Instrument delayed : Instrument.getDelayed(threshold)) {
-      // Unschedule delayed instruments
-      log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
-      delayed.setScheduled(false);
-      Instrument.update(delayed);
+    try {
+      for (Instrument delayed : Instrument.getDelayed(threshold)) {
+        // Unschedule delayed instruments
+        log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
+        delayed.setScheduled(false);
+        Instrument.update(delayed);
+      }
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error while unsticking instruments, aborting", e);
+      return false;
     }
     log.info("Stuck instruments check complete");
+    return true;
   }
 
-  protected void refreshInstrumentMap() {
+  protected boolean refreshInstrumentMap() {
     log.info("Refreshing instrument map");
     // Retrieve list of all current active instrument IDs
-    Set<Integer> currentActive = new HashSet<Integer>();
-    currentActive.addAll(Instrument.getActiveTypeIDs());
+    final Set<Integer> currentActive = new HashSet<Integer>();
+    try {
+      currentActive.addAll(Instrument.getActiveTypeIDs());
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error retrieving instruments, aborting refresh", e);
+      return false;
+    }
     // Retrieve all current instruments from CREST
-    Set<Integer> latestActive = new HashSet<Integer>();
+    final Set<Integer> latestActive = new HashSet<Integer>();
     try {
       URL root = new URL(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.CREST_ROOT_PROP, EveKitMarketDataProvider.CREST_ROOT_DEFAULT));
       CRESTClient client = new CRESTClient(root);
@@ -140,35 +151,47 @@ public class SchedulerApplication extends Application {
       } while (true);
     } catch (IOException e) {
       log.log(Level.SEVERE, "Error retrieving last active market types, skipping update", e);
-      return;
+      return false;
     }
     // Add instruments we're missing (active, unscheduled)
-    for (int next : latestActive) {
-      if (currentActive.contains(next)) continue;
-      // Instrument we either haven't seen before, or we already have but have decided to make inactive
-      Instrument existing = Instrument.get(next);
-      if (existing != null) {
-        log.info("Instrument " + next + " already exists but is inactive, leaving inactive");
-        continue;
-      }
-      log.info("Adding new instrument type " + next);
-      Instrument newI = new Instrument(next, true, 0L);
-      Instrument.update(newI);
-    }
-    // De-activate instruments no longer in CREST
-    for (int next : currentActive) {
-      if (latestActive.contains(next)) continue;
-      // Instrument no longer active
-      Instrument toDeactivate = Instrument.get(next);
-      if (toDeactivate == null) {
-        log.severe("Failed to find instrument " + next + " for deactivation, skipping");
-      } else {
-        log.info("Deactivating missing instrument type " + next);
-        toDeactivate.setActive(false);
-        Instrument.update(toDeactivate);
-      }
+    try {
+      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+        @Override
+        public void run() throws Exception {
+
+          for (int next : latestActive) {
+            if (currentActive.contains(next)) continue;
+            // Instrument we either haven't seen before, or we already have but have decided to make inactive
+            Instrument existing = Instrument.get(next);
+            if (existing != null) {
+              log.info("Instrument " + next + " already exists but is inactive, leaving inactive");
+              continue;
+            }
+            log.info("Adding new instrument type " + next);
+            Instrument newI = new Instrument(next, true, 0L);
+            Instrument.update(newI);
+          }
+          // De-activate instruments no longer in CREST
+          for (int next : currentActive) {
+            if (latestActive.contains(next)) continue;
+            // Instrument no longer active
+            Instrument toDeactivate = Instrument.get(next);
+            if (toDeactivate == null) {
+              log.severe("Failed to find instrument " + next + " for deactivation, skipping");
+            } else {
+              log.info("Deactivating missing instrument type " + next);
+              toDeactivate.setActive(false);
+              Instrument.update(toDeactivate);
+            }
+          }
+        }
+      });
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error updating instruments, aborting", e);
+      return false;
     }
     log.info("Instrument map refresh complete");
+    return true;
   }
 
 }
