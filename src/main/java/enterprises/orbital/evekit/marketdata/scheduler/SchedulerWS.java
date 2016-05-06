@@ -1,7 +1,9 @@
 package enterprises.orbital.evekit.marketdata.scheduler;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -177,6 +179,102 @@ public class SchedulerWS {
     long finish = OrbitalProperties.getCurrentTime();
     if (logit)
       log.info("Finished processing for (" + regionID + ", " + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
+    // Order accepted
+    return Response.ok().build();
+  }
+
+  @Path("/storeAll")
+  @POST
+  @ApiOperation(
+      value = "Populate a complete set of orders for all regions for a given type.  Clean any orders that aren't listed.  Release the type when finished")
+  @ApiResponses(
+      value = {
+          @ApiResponse(
+              code = 200,
+              message = "Population successful"),
+          @ApiResponse(
+              code = 500,
+              message = "Internal error"),
+      })
+  public Response storeAll(
+                           @Context HttpServletRequest request,
+                           @QueryParam("typeid") @ApiParam(
+                               name = "typeid",
+                               required = true,
+                               value = "Type ID of order") final int typeID,
+                           @ApiParam(
+                               name = "orders",
+                               required = true,
+                               value = "Orders to popualte") final List<Order> orders) {
+    final long at = OrbitalProperties.getCurrentTime();
+    boolean logit = updateLog();
+    if (logit) log.info("Processing " + orders.size() + " orders on (" + typeID + ")");
+    final Set<Integer> regions = new HashSet<Integer>();
+    for (Order next : orders) {
+      regions.add(next.getRegionID());
+    }
+    synchronized (Order.class) {
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+            Map<Integer, Set<Long>> live = new HashMap<Integer, Set<Long>>();
+            for (int regionID : regions) {
+              Set<Long> active = new HashSet<Long>();
+              active.addAll(Order.getLiveIDs(at, regionID, typeID));
+              live.put(regionID, active);
+            }
+            // Populate all orders
+            for (Order next : orders) {
+              int regionID = next.getRegionID();
+              // Record that this order is still live
+              live.get(regionID).remove(next.getOrderID());
+              // Construct new potential order
+              Order check = new Order(
+                  regionID, typeID, next.getOrderID(), next.isBuy(), next.getIssued(), next.getPrice(), next.getVolumeEntered(), next.getMinVolume(),
+                  next.getVolume(), next.getOrderRange(), next.getLocationID(), next.getDuration());
+              // Check whether we already know about this order
+              Order existing = Order.get(at, regionID, typeID, check.getOrderID());
+              // If the order exists and has changed, then evolve. Otherwise store the new order.
+              if (existing != null) {
+                // Existing, evolve if changed
+                if (!existing.equivalent(check)) {
+                  // Evolve
+                  existing.evolve(check, at);
+                  Order.update(existing);
+                  Order.update(check);
+                }
+              } else {
+                // New entity
+                check.setup(at);
+                Order.update(check);
+              }
+            }
+            // End of life orders no longer present in the book
+            for (int regionID : live.keySet()) {
+              for (long orderID : live.get(regionID)) {
+                Order eol = Order.get(at, regionID, typeID, orderID);
+                if (eol != null) {
+                  // NOTE: order may not longer exist if we're racing with another update
+                  eol.evolve(null, at);
+                  Order.update(eol);
+                }
+              }
+            }
+            // Update complete - release this instrument
+            Instrument update = Instrument.get(typeID);
+            update.setLastUpdate(at);
+            update.setScheduled(false);
+            Instrument.update(update);
+          }
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
+    }
+    long finish = OrbitalProperties.getCurrentTime();
+    if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
     // Order accepted
     return Response.ok().build();
   }
