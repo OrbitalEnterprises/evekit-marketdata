@@ -110,6 +110,7 @@ public class SchedulerWS {
                                  required = true,
                                  value = "Orders to popualte") final List<Order> orders) {
     final long at = OrbitalProperties.getCurrentTime();
+    log.info("Processing " + orders.size() + " orders on (" + regionID + ", " + typeID + ")");
     try {
       EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
         @Override
@@ -156,6 +157,8 @@ public class SchedulerWS {
       log.log(Level.SEVERE, "DB error storing order, failing: (" + regionID + ", " + typeID + ")", e);
       return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
+    long finish = OrbitalProperties.getCurrentTime();
+    log.info("Finished processing for (" + regionID + ", " + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
     // Order accepted
     return Response.ok().build();
   }
