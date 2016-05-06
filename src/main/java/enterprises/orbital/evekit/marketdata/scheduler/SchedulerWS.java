@@ -84,6 +84,18 @@ public class SchedulerWS {
     return Response.ok().entity(next).build();
   }
 
+  protected static final int LOG_COUNTER_COUNTDOWN = 1000;
+  protected static int       logCounter            = LOG_COUNTER_COUNTDOWN;
+
+  protected static boolean updateLog() {
+    synchronized (SchedulerWS.class) {
+      logCounter--;
+      boolean out = logCounter <= 0;
+      if (out) logCounter = LOG_COUNTER_COUNTDOWN;
+      return out;
+    }
+  }
+
   @Path("/storeBatch")
   @POST
   @ApiOperation(
@@ -112,7 +124,8 @@ public class SchedulerWS {
                                  required = true,
                                  value = "Orders to popualte") final List<Order> orders) {
     final long at = OrbitalProperties.getCurrentTime();
-    log.info("Processing " + orders.size() + " orders on (" + regionID + ", " + typeID + ")");
+    boolean logit = updateLog();
+    if (logit) log.info("Processing " + orders.size() + " orders on (" + regionID + ", " + typeID + ")");
     synchronized (Order.class) {
       try {
         EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
@@ -162,7 +175,8 @@ public class SchedulerWS {
       }
     }
     long finish = OrbitalProperties.getCurrentTime();
-    log.info("Finished processing for (" + regionID + ", " + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
+    if (logit)
+      log.info("Finished processing for (" + regionID + ", " + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
     // Order accepted
     return Response.ok().build();
   }
