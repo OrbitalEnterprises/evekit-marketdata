@@ -2,6 +2,7 @@ package enterprises.orbital.evekit.marketdata.scheduler;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -178,4 +179,54 @@ public class SchedulerWS {
     return Response.ok().build();
   }
 
+  @Path("/close")
+  @POST
+  @ApiOperation(
+      value = "EOL orders which are no longer active")
+  @ApiResponses(
+      value = {
+          @ApiResponse(
+              code = 200,
+              message = "Orders successfully end of lifed"),
+          @ApiResponse(
+              code = 500,
+              message = "Internal error"),
+      })
+  public Response closeOrders(
+                              @Context HttpServletRequest request,
+                              @QueryParam("regionid") @ApiParam(
+                                  name = "regionid",
+                                  required = true,
+                                  value = "Region where order is located") final int regionID,
+                              @QueryParam("typeid") @ApiParam(
+                                  name = "typeid",
+                                  required = true,
+                                  value = "Type ID of order") final int typeID,
+                              @ApiParam(
+                                  name = "orders",
+                                  required = true,
+                                  value = "Orders to be end of lifed") final List<Long> orders) {
+    try {
+      final long time = OrbitalProperties.getCurrentTime();
+      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+        @Override
+        public void run() throws Exception {
+          // End of life orders no longer present in the book
+          for (Long orderID : orders) {
+            Order eol = Order.get(time, regionID, typeID, orderID);
+            if (eol != null) {
+              // NOTE: order may not longer exist if we're racing with another update
+              eol.evolve(null, time);
+              Order.update(eol);
+            }
+          }
+        }
+      });
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error closing orders, failing", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    }
+    // Orders closed
+    return Response.ok().build();
+  }
 }
