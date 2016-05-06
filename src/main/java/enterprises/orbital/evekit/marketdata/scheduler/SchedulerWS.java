@@ -72,11 +72,13 @@ public class SchedulerWS {
                            @Context HttpServletRequest request) {
     long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
     Instrument next;
-    try {
-      next = Instrument.takeNextScheduled(interval);
-    } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
-      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    synchronized (Instrument.class) {
+      try {
+        next = Instrument.takeNextScheduled(interval);
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
     }
     if (next == null) return Response.status(Status.NOT_FOUND).build();
     return Response.ok().entity(next).build();
@@ -111,51 +113,53 @@ public class SchedulerWS {
                                  value = "Orders to popualte") final List<Order> orders) {
     final long at = OrbitalProperties.getCurrentTime();
     log.info("Processing " + orders.size() + " orders on (" + regionID + ", " + typeID + ")");
-    try {
-      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-        @Override
-        public void run() throws Exception {
-          Set<Long> live = new HashSet<Long>();
-          live.addAll(Order.getLiveIDs(at, regionID, typeID));
-          // Populate all orders
-          for (Order next : orders) {
-            // Record that this order is still live
-            live.remove(next.getOrderID());
-            // Construct new potential order
-            Order check = new Order(
-                regionID, typeID, next.getOrderID(), next.isBuy(), next.getIssued(), next.getPrice(), next.getVolumeEntered(), next.getMinVolume(),
-                next.getVolume(), next.getOrderRange(), next.getLocationID(), next.getDuration());
-            // Check whether we already know about this order
-            Order existing = Order.get(at, regionID, typeID, check.getOrderID());
-            // If the order exists and has changed, then evolve. Otherwise store the new order.
-            if (existing != null) {
-              // Existing, evolve if changed
-              if (!existing.equivalent(check)) {
-                // Evolve
-                existing.evolve(check, at);
-                Order.update(existing);
+    synchronized (Order.class) {
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+            Set<Long> live = new HashSet<Long>();
+            live.addAll(Order.getLiveIDs(at, regionID, typeID));
+            // Populate all orders
+            for (Order next : orders) {
+              // Record that this order is still live
+              live.remove(next.getOrderID());
+              // Construct new potential order
+              Order check = new Order(
+                  regionID, typeID, next.getOrderID(), next.isBuy(), next.getIssued(), next.getPrice(), next.getVolumeEntered(), next.getMinVolume(),
+                  next.getVolume(), next.getOrderRange(), next.getLocationID(), next.getDuration());
+              // Check whether we already know about this order
+              Order existing = Order.get(at, regionID, typeID, check.getOrderID());
+              // If the order exists and has changed, then evolve. Otherwise store the new order.
+              if (existing != null) {
+                // Existing, evolve if changed
+                if (!existing.equivalent(check)) {
+                  // Evolve
+                  existing.evolve(check, at);
+                  Order.update(existing);
+                  Order.update(check);
+                }
+              } else {
+                // New entity
+                check.setup(at);
                 Order.update(check);
               }
-            } else {
-              // New entity
-              check.setup(at);
-              Order.update(check);
+            }
+            // End of life orders no longer present in the book
+            for (Long orderID : live) {
+              Order eol = Order.get(at, regionID, typeID, orderID);
+              if (eol != null) {
+                // NOTE: order may not longer exist if we're racing with another update
+                eol.evolve(null, at);
+                Order.update(eol);
+              }
             }
           }
-          // End of life orders no longer present in the book
-          for (Long orderID : live) {
-            Order eol = Order.get(at, regionID, typeID, orderID);
-            if (eol != null) {
-              // NOTE: order may not longer exist if we're racing with another update
-              eol.evolve(null, at);
-              Order.update(eol);
-            }
-          }
-        }
-      });
-    } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error storing order, failing: (" + regionID + ", " + typeID + ")", e);
-      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error storing order, failing: (" + regionID + ", " + typeID + ")", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
     }
     long finish = OrbitalProperties.getCurrentTime();
     log.info("Finished processing for (" + regionID + ", " + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
