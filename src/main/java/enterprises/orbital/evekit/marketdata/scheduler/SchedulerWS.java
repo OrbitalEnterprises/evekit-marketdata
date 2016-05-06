@@ -172,7 +172,7 @@ public class SchedulerWS {
         }
       });
     } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error storing order, failing", e);
+      log.log(Level.SEVERE, "DB error storing order, failing: (" + regionID + ", " + typeID + ", " + orderID + ")", e);
       return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
     // Order accepted
