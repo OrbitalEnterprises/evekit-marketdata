@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -72,16 +71,14 @@ public class SchedulerApplication extends Application {
 
   }
 
+  @SuppressWarnings("unchecked")
   public SchedulerApplication() throws IOException {
     // Populate properties
     OrbitalProperties.addPropertyFile("EveKitMarketdataScheduler.properties");
     // Sent persistence unit for properties
     PersistentProperty.setProvider(new DBPropertyProvider(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.MARKETDATA_PU_PROP)));
     // Prepare processing queue
-    orderProcessingQueueOdd = new ArrayBlockingQueue<List<Order>>(
-        (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
-    orderProcessingQueueEven = new ArrayBlockingQueue<List<Order>>(
-        (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
+    createProcessingQueues();
     // Set agent if present
     String agent = OrbitalProperties.getGlobalProperty("enterprises.orbital.evekit.marketdata.crest.agent", null);
     if (agent != null) CRESTClient.setAgent(agent);
@@ -105,8 +102,9 @@ public class SchedulerApplication extends Application {
 
     }))).start();
     // Schedule order processing thread
-    (new Thread(new OrderProcessor(orderProcessingQueueOdd))).start();
-    (new Thread(new OrderProcessor(orderProcessingQueueEven))).start();
+    for (int i = 0; i < orderProcessingQueues.length; i++) {
+      (new Thread(new OrderProcessor((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[i]))).start();
+    }
   }
 
   @Override
@@ -227,13 +225,50 @@ public class SchedulerApplication extends Application {
     }
   }
 
-  public static BlockingQueue<List<Order>> orderProcessingQueueOdd;
-  public static BlockingQueue<List<Order>> orderProcessingQueueEven;
+  public static Object[] orderProcessingQueues;
+
+  // These functions encapsulate the current queue placement logic for order processors
+  protected static void createProcessingQueues() {
+    orderProcessingQueues = new Object[5];
+    for (int i = 0; i < orderProcessingQueues.length; i++)
+      orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
+          (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
+  }
+
+  // This function encapsulates the queue placement logic for the order processor
+  @SuppressWarnings("unchecked")
+  public static void queueOrders(
+                                 int typeID,
+                                 List<Order> orderBlock)
+    throws InterruptedException {
+    switch (typeID % 10) {
+    case 0:
+    case 1:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[0]).put(orderBlock);
+      break;
+    case 2:
+    case 3:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[1]).put(orderBlock);
+      break;
+    case 4:
+    case 5:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
+      break;
+    case 6:
+    case 7:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[3]).put(orderBlock);
+      break;
+    case 8:
+    case 9:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[4]).put(orderBlock);
+      break;
+    }
+  }
 
   protected static class OrderProcessor implements Runnable {
-    private BlockingQueue<List<Order>> source;
+    private ArrayBlockingQueue<List<Order>> source;
 
-    public OrderProcessor(BlockingQueue<List<Order>> source) {
+    public OrderProcessor(ArrayBlockingQueue<List<Order>> source) {
       this.source = source;
     }
 
