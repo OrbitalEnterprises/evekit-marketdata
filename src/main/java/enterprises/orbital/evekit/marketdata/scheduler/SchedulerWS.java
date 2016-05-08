@@ -75,22 +75,13 @@ public class SchedulerWS {
     long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
     Instrument next;
     try {
-      SchedulerApplication.instrumentLock.acquire();
-      try {
-        next = Instrument.takeNextScheduled(interval);
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
-      }
-      if (next == null) return Response.status(Status.NOT_FOUND).build();
-      return Response.ok().entity(next).build();
-    } catch (InterruptedException e) {
-      log.log(Level.INFO, "exit requested", e);
-      System.exit(0);
-    } finally {
-      SchedulerApplication.instrumentLock.release();
+      next = Instrument.takeNextScheduled(interval);
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
-    return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    if (next == null) return Response.status(Status.NOT_FOUND).build();
+    return Response.ok().entity(next).build();
   }
 
   protected static final int LOG_COUNTER_COUNTDOWN = 1000;
@@ -280,11 +271,6 @@ public class SchedulerWS {
                 }
               }
             }
-            // Update complete - release this instrument
-            Instrument update = Instrument.get(typeID);
-            update.setLastUpdate(at);
-            update.setScheduled(false);
-            Instrument.update(update);
           }
         });
       } catch (Exception e) {
@@ -293,33 +279,24 @@ public class SchedulerWS {
       }
     }
     try {
-      SchedulerApplication.instrumentLock.acquire();
-      try {
-        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-          @Override
-          public void run() throws Exception {
-            // Update complete - release this instrument
-            Instrument update = Instrument.get(typeID);
-            update.setLastUpdate(at);
-            update.setScheduled(false);
-            Instrument.update(update);
-          }
-        });
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
-      }
-      long finish = OrbitalProperties.getCurrentTime();
-      if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
-      // Order accepted
-      return Response.ok().build();
-    } catch (InterruptedException e) {
-      log.log(Level.INFO, "exit requested", e);
-      System.exit(0);
-    } finally {
-      SchedulerApplication.instrumentLock.release();
+      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+        @Override
+        public void run() throws Exception {
+          // Update complete - release this instrument
+          Instrument update = Instrument.get(typeID);
+          update.setLastUpdate(at);
+          update.setScheduled(false);
+          Instrument.update(update);
+        }
+      });
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
-    return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    long finish = OrbitalProperties.getCurrentTime();
+    if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
+    // Order accepted
+    return Response.ok().build();
   }
 
 }
