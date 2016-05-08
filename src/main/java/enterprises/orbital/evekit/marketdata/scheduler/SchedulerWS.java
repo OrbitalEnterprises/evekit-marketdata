@@ -74,14 +74,14 @@ public class SchedulerWS {
                            @Context HttpServletRequest request) {
     long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
     Instrument next;
-    synchronized (Instrument.class) {
-      try {
-        next = Instrument.takeNextScheduled(interval);
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
-      }
+    // synchronized (Instrument.class) {
+    try {
+      next = Instrument.takeNextScheduled(interval);
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
+    // }
     if (next == null) return Response.status(Status.NOT_FOUND).build();
     return Response.ok().entity(next).build();
   }
