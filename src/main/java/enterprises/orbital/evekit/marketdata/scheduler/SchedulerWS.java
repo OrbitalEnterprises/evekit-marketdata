@@ -96,91 +96,6 @@ public class SchedulerWS {
     }
   }
 
-  @Path("/storeBatch")
-  @POST
-  @ApiOperation(
-      value = "Populate a set of orders for an instrument.  Clean any orders that aren't listed.")
-  @ApiResponses(
-      value = {
-          @ApiResponse(
-              code = 200,
-              message = "Population successful"),
-          @ApiResponse(
-              code = 500,
-              message = "Internal error"),
-      })
-  public Response storeBatch(
-                             @Context HttpServletRequest request,
-                             @QueryParam("regionid") @ApiParam(
-                                 name = "regionid",
-                                 required = true,
-                                 value = "Region where order is located") final int regionID,
-                             @QueryParam("typeid") @ApiParam(
-                                 name = "typeid",
-                                 required = true,
-                                 value = "Type ID of order") final int typeID,
-                             @ApiParam(
-                                 name = "orders",
-                                 required = true,
-                                 value = "Orders to popualte") final List<Order> orders) {
-    final long at = OrbitalProperties.getCurrentTime();
-    boolean logit = updateLog();
-    if (logit) log.info("Processing " + orders.size() + " orders on (" + regionID + ", " + typeID + ")");
-    synchronized (Order.class) {
-      try {
-        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-          @Override
-          public void run() throws Exception {
-            Set<Long> live = new HashSet<Long>();
-            live.addAll(Order.getLiveIDs(at, regionID, typeID));
-            // Populate all orders
-            for (Order next : orders) {
-              // Record that this order is still live
-              live.remove(next.getOrderID());
-              // Construct new potential order
-              Order check = new Order(
-                  regionID, typeID, next.getOrderID(), next.isBuy(), next.getIssued(), next.getPrice(), next.getVolumeEntered(), next.getMinVolume(),
-                  next.getVolume(), next.getOrderRange(), next.getLocationID(), next.getDuration());
-              // Check whether we already know about this order
-              Order existing = Order.get(at, regionID, typeID, check.getOrderID());
-              // If the order exists and has changed, then evolve. Otherwise store the new order.
-              if (existing != null) {
-                // Existing, evolve if changed
-                if (!existing.equivalent(check)) {
-                  // Evolve
-                  existing.evolve(check, at);
-                  Order.update(existing);
-                  Order.update(check);
-                }
-              } else {
-                // New entity
-                check.setup(at);
-                Order.update(check);
-              }
-            }
-            // End of life orders no longer present in the book
-            for (Long orderID : live) {
-              Order eol = Order.get(at, regionID, typeID, orderID);
-              if (eol != null) {
-                // NOTE: order may not longer exist if we're racing with another update
-                eol.evolve(null, at);
-                Order.update(eol);
-              }
-            }
-          }
-        });
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error storing order, failing: (" + regionID + ", " + typeID + ")", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
-      }
-    }
-    long finish = OrbitalProperties.getCurrentTime();
-    if (logit)
-      log.info("Finished processing for (" + regionID + ", " + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
-    // Order accepted
-    return Response.ok().build();
-  }
-
   protected static final Map<Integer, Integer> typeLockMap = new HashMap<Integer, Integer>();
 
   protected static Object getTypeLock(
@@ -215,7 +130,7 @@ public class SchedulerWS {
                            @ApiParam(
                                name = "orders",
                                required = true,
-                               value = "Orders to popualte") final List<Order> orders) {
+                               value = "Orders to populate") final List<Order> orders) {
     final long at = OrbitalProperties.getCurrentTime();
     boolean logit = updateLog();
     if (logit) log.info("Processing " + orders.size() + " orders on (" + typeID + ")");
