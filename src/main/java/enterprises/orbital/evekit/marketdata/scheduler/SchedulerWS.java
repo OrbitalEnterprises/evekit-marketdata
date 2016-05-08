@@ -1,10 +1,6 @@
 package enterprises.orbital.evekit.marketdata.scheduler;
 
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -74,13 +70,11 @@ public class SchedulerWS {
                            @Context HttpServletRequest request) {
     long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
     Instrument next;
-    synchronized (Instrument.class) {
-      try {
-        next = Instrument.takeNextScheduled(interval);
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
-      }
+    try {
+      next = Instrument.takeNextScheduled(interval);
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
     if (next == null) return Response.status(Status.NOT_FOUND).build();
     return Response.ok().entity(next).build();
@@ -95,18 +89,6 @@ public class SchedulerWS {
       boolean out = logCounter <= 0;
       if (out) logCounter = LOG_COUNTER_COUNTDOWN;
       return out;
-    }
-  }
-
-  protected static final Map<Integer, Integer> typeLockMap = new HashMap<Integer, Integer>();
-
-  protected static Object getTypeLock(
-                                      int typeID) {
-    synchronized (Order.class) {
-      if (typeLockMap.containsKey(typeID)) return typeLockMap.get(typeID);
-      Integer lck = new Integer(1);
-      typeLockMap.put(typeID, lck);
-      return lck;
     }
   }
 
@@ -136,82 +118,30 @@ public class SchedulerWS {
     final long at = OrbitalProperties.getCurrentTime();
     boolean logit = updateLog();
     if (logit) log.info("Processing " + orders.size() + " orders on (" + typeID + ")");
-    final Set<Integer> regions = new HashSet<Integer>();
-    for (Order next : orders) {
-      regions.add(next.getRegionID());
-    }
-    synchronized (Order.class) {
-      // synchronized (getTypeLock(typeID)) {
+    if (orders.size() > 0) {
+      // Queue up orders for processing. We'll block if the queue is backlogged.
       try {
-        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-          @Override
-          public void run() throws Exception {
-            Map<Integer, Set<Long>> live = new HashMap<Integer, Set<Long>>();
-            for (int regionID : regions) {
-              Set<Long> active = new HashSet<Long>();
-              active.addAll(Order.getLiveIDs(at, regionID, typeID));
-              live.put(regionID, active);
-            }
-            // Populate all orders
-            for (Order next : orders) {
-              int regionID = next.getRegionID();
-              // Record that this order is still live
-              live.get(regionID).remove(next.getOrderID());
-              // Construct new potential order
-              Order check = new Order(
-                  regionID, typeID, next.getOrderID(), next.isBuy(), next.getIssued(), next.getPrice(), next.getVolumeEntered(), next.getMinVolume(),
-                  next.getVolume(), next.getOrderRange(), next.getLocationID(), next.getDuration());
-              // Check whether we already know about this order
-              Order existing = Order.get(at, regionID, typeID, check.getOrderID());
-              // If the order exists and has changed, then evolve. Otherwise store the new order.
-              if (existing != null) {
-                // Existing, evolve if changed
-                if (!existing.equivalent(check)) {
-                  // Evolve
-                  existing.evolve(check, at);
-                  Order.update(existing);
-                  Order.update(check);
-                }
-              } else {
-                // New entity
-                check.setup(at);
-                Order.update(check);
-              }
-            }
-            // End of life orders no longer present in the book
-            for (int regionID : live.keySet()) {
-              for (long orderID : live.get(regionID)) {
-                Order eol = Order.get(at, regionID, typeID, orderID);
-                if (eol != null) {
-                  // NOTE: order may not longer exist if we're racing with another update
-                  eol.evolve(null, at);
-                  Order.update(eol);
-                }
-              }
-            }
-          }
-        });
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+        SchedulerApplication.orderProcessingQueue.put(orders);
+      } catch (InterruptedException e) {
+        log.log(Level.INFO, "Break requested, exiting", e);
+        System.exit(0);
       }
     }
-    synchronized (Instrument.class) {
-      try {
-        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-          @Override
-          public void run() throws Exception {
-            // Update complete - release this instrument
-            Instrument update = Instrument.get(typeID);
-            update.setLastUpdate(at);
-            update.setScheduled(false);
-            Instrument.update(update);
-          }
-        });
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
-      }
+    // Mark this instrument as updated.
+    try {
+      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+        @Override
+        public void run() throws Exception {
+          // Update complete - release this instrument
+          Instrument update = Instrument.get(typeID);
+          update.setLastUpdate(at);
+          update.setScheduled(false);
+          Instrument.update(update);
+        }
+      });
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
+      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
     }
     long finish = OrbitalProperties.getCurrentTime();
     if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
