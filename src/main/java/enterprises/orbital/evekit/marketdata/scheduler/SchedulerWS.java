@@ -140,7 +140,7 @@ public class SchedulerWS {
     for (Order next : orders) {
       regions.add(next.getRegionID());
     }
-    synchronized (getTypeLock(typeID)) {
+    synchronized (Order.class) {
       try {
         EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
           @Override
