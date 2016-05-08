@@ -78,7 +78,9 @@ public class SchedulerApplication extends Application {
     // Sent persistence unit for properties
     PersistentProperty.setProvider(new DBPropertyProvider(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.MARKETDATA_PU_PROP)));
     // Prepare processing queue
-    orderProcessingQueue = new ArrayBlockingQueue<List<Order>>(
+    orderProcessingQueueOdd = new ArrayBlockingQueue<List<Order>>(
+        (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
+    orderProcessingQueueEven = new ArrayBlockingQueue<List<Order>>(
         (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
     // Set agent if present
     String agent = OrbitalProperties.getGlobalProperty("enterprises.orbital.evekit.marketdata.crest.agent", null);
@@ -103,7 +105,8 @@ public class SchedulerApplication extends Application {
 
     }))).start();
     // Schedule order processing thread
-    (new Thread(new OrderProcessor())).start();
+    (new Thread(new OrderProcessor(orderProcessingQueueOdd))).start();
+    (new Thread(new OrderProcessor(orderProcessingQueueEven))).start();
   }
 
   @Override
@@ -224,9 +227,15 @@ public class SchedulerApplication extends Application {
     }
   }
 
-  public static BlockingQueue<List<Order>> orderProcessingQueue;
+  public static BlockingQueue<List<Order>> orderProcessingQueueOdd;
+  public static BlockingQueue<List<Order>> orderProcessingQueueEven;
 
   protected static class OrderProcessor implements Runnable {
+    private BlockingQueue<List<Order>> source;
+
+    public OrderProcessor(BlockingQueue<List<Order>> source) {
+      this.source = source;
+    }
 
     @Override
     public void run() {
@@ -234,7 +243,7 @@ public class SchedulerApplication extends Application {
       while (true) {
         try {
           // Retrieve next order batch from queue. Short circuit on empty batches (should never happen)
-          final List<Order> nextBatch = orderProcessingQueue.take();
+          final List<Order> nextBatch = source.take();
           if (nextBatch.isEmpty()) continue;
           final int typeID = nextBatch.get(0).getTypeID();
           // Update time depends on when this item makes it to the front of the queue

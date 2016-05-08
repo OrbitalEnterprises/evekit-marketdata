@@ -121,7 +121,10 @@ public class SchedulerWS {
     if (orders.size() > 0) {
       // Queue up orders for processing. We'll block if the queue is backlogged.
       try {
-        SchedulerApplication.orderProcessingQueue.put(orders);
+        if (typeID % 2 == 0)
+          SchedulerApplication.orderProcessingQueueEven.put(orders);
+        else
+          SchedulerApplication.orderProcessingQueueOdd.put(orders);
       } catch (InterruptedException e) {
         log.log(Level.INFO, "Break requested, exiting", e);
         System.exit(0);
