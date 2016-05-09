@@ -126,22 +126,23 @@ public class SchedulerWS {
         log.log(Level.INFO, "Break requested, exiting", e);
         System.exit(0);
       }
-    }
-    // Mark this instrument as updated.
-    try {
-      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-        @Override
-        public void run() throws Exception {
-          // Update complete - release this instrument
-          Instrument update = Instrument.get(typeID);
-          update.setLastUpdate(at);
-          update.setScheduled(false);
-          Instrument.update(update);
-        }
-      });
-    } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
-      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    } else {
+      // Release instrument now since no orders were queued
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+            // Update complete - release this instrument
+            Instrument update = Instrument.get(typeID);
+            update.setLastUpdate(at);
+            update.setScheduled(false);
+            Instrument.update(update);
+          }
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
     }
     long finish = OrbitalProperties.getCurrentTime();
     if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");

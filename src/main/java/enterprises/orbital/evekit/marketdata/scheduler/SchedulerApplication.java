@@ -338,6 +338,11 @@ public class SchedulerApplication extends Application {
                     }
                   }
                 }
+                // Update complete - release this instrument
+                Instrument update = Instrument.get(typeID);
+                update.setLastUpdate(at);
+                update.setScheduled(false);
+                Instrument.update(update);
               }
             });
           } catch (Exception e) {
