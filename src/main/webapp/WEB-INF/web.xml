@@ -30,6 +30,15 @@
     </init-param>
     <load-on-startup>2</load-on-startup>
   </servlet>
+  <servlet>
+    <servlet-name>prometheus</servlet-name>
+    <servlet-class>io.prometheus.client.exporter.MetricsServlet</servlet-class>
+    <load-on-startup>3</load-on-startup>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>prometheus</servlet-name>
+    <url-pattern>/metrics</url-pattern>
+  </servlet-mapping>
   <filter>
     <filter-name>ApiOriginFilter</filter-name>
     <filter-class>enterprises.orbital.evekit.marketdata.scheduler.ApiOriginFilter</filter-class>
