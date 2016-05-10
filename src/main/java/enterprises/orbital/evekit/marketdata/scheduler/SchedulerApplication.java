@@ -18,12 +18,15 @@ import javax.ws.rs.core.Application;
 
 import enterprises.orbital.base.OrbitalProperties;
 import enterprises.orbital.base.PersistentProperty;
+import enterprises.orbital.db.ConnectionFactory.RunInTransaction;
 import enterprises.orbital.db.ConnectionFactory.RunInVoidTransaction;
 import enterprises.orbital.db.DBPropertyProvider;
 import enterprises.orbital.evekit.marketdata.CRESTClient;
 import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
 import enterprises.orbital.evekit.marketdata.Order;
+import io.prometheus.client.Counter;
+import io.prometheus.client.Histogram;
 
 public class SchedulerApplication extends Application {
   public static final Logger log                             = Logger.getLogger(SchedulerApplication.class.getName());
@@ -36,6 +39,12 @@ public class SchedulerApplication extends Application {
   public static final long   DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
   public static final String PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
   public static final int    DEF_ORDER_PROC_QUEUE_SIZE       = 100;
+
+  // Metrics
+  static final Counter       instrument_update_delay         = Counter.build().name("instrument_update_delay_total")
+      .help("Total time between updates (seconds) for an instrument.").labelNames("type_id").register();
+  static final Histogram     instrument_update_samples       = Histogram.build().name("instrument_update_delay_seconds")
+      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").register();
 
   protected static interface Maintenance {
     public boolean performMaintenance();
@@ -292,9 +301,9 @@ public class SchedulerApplication extends Application {
           }
           // Transact around the entire order load
           try {
-            EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+            long updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
               @Override
-              public void run() throws Exception {
+              public Long run() throws Exception {
                 Map<Integer, Set<Long>> live = new HashMap<Integer, Set<Long>>();
                 for (int regionID : regions) {
                   Set<Long> active = new HashSet<Long>();
@@ -340,11 +349,16 @@ public class SchedulerApplication extends Application {
                 }
                 // Update complete - release this instrument
                 Instrument update = Instrument.get(typeID);
+                long last = update.getLastUpdate();
                 update.setLastUpdate(at);
                 update.setScheduled(false);
                 Instrument.update(update);
+                return at - last;
               }
             });
+            // Store update delay metrics
+            instrument_update_delay.labels(String.valueOf(typeID)).inc(updateDelay / 1000);
+            instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
           } catch (Exception e) {
             log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
           }
