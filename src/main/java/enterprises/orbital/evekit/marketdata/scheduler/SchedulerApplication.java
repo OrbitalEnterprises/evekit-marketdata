@@ -25,26 +25,25 @@ import enterprises.orbital.evekit.marketdata.CRESTClient;
 import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
 import enterprises.orbital.evekit.marketdata.Order;
-import io.prometheus.client.Counter;
 import io.prometheus.client.Histogram;
 
 public class SchedulerApplication extends Application {
-  public static final Logger log                             = Logger.getLogger(SchedulerApplication.class.getName());
+  public static final Logger    log                             = Logger.getLogger(SchedulerApplication.class.getName());
   // Property which holds the name of the persistence unit for properties
-  public static final String PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
-  public static final String DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
-  public static final String PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
-  public static final long   DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
-  public static final String PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
-  public static final long   DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
-  public static final String PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
-  public static final int    DEF_ORDER_PROC_QUEUE_SIZE       = 100;
+  public static final String    PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
+  public static final String    DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
+  public static final String    PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
+  public static final long      DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
+  public static final String    PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
+  public static final long      DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
+  public static final String    PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
+  public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 100;
 
   // Metrics
-  static final Counter       instrument_update_delay         = Counter.build().name("instrument_update_delay_total")
-      .help("Total time between updates (seconds) for an instrument.").labelNames("type_id").register();
-  static final Histogram     instrument_update_samples       = Histogram.build().name("instrument_update_delay_seconds")
+  public static final Histogram instrument_update_samples       = Histogram.build().name("instrument_update_delay_seconds")
       .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").register();
+  public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
+      .help("Interval (seconds) between updates for all instruments.").register();
 
   protected static interface Maintenance {
     public boolean performMaintenance();
@@ -222,18 +221,6 @@ public class SchedulerApplication extends Application {
     return true;
   }
 
-  protected static final int LOG_COUNTER_COUNTDOWN = 1000;
-  protected static int       logCounter            = LOG_COUNTER_COUNTDOWN;
-
-  protected static boolean updateLog() {
-    synchronized (SchedulerApplication.class) {
-      logCounter--;
-      boolean out = logCounter <= 0;
-      if (out) logCounter = LOG_COUNTER_COUNTDOWN;
-      return out;
-    }
-  }
-
   public static Object[] orderProcessingQueues;
 
   // These functions encapsulate the current queue placement logic for order processors
@@ -292,8 +279,6 @@ public class SchedulerApplication extends Application {
           final int typeID = nextBatch.get(0).getTypeID();
           // Update time depends on when this item makes it to the front of the queue
           final long at = OrbitalProperties.getCurrentTime();
-          boolean logit = updateLog();
-          if (logit) log.info("Processing " + nextBatch.size() + " orders on (" + typeID + ")");
           // Extract regions we're updating in this batch
           final Set<Integer> regions = new HashSet<Integer>();
           for (Order next : nextBatch) {
@@ -357,14 +342,11 @@ public class SchedulerApplication extends Application {
               }
             });
             // Store update delay metrics
-            instrument_update_delay.labels(String.valueOf(typeID)).inc(updateDelay / 1000);
             instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+            all_instrument_update_samples.observe(updateDelay / 1000);
           } catch (Exception e) {
             log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
           }
-
-          long finish = OrbitalProperties.getCurrentTime();
-          if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
         } catch (InterruptedException e) {
           log.log(Level.INFO, "Break requested, exiting", e);
           System.exit(0);

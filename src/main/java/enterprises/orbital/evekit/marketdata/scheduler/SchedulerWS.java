@@ -22,6 +22,7 @@ import enterprises.orbital.db.ConnectionFactory.RunInVoidTransaction;
 import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
 import enterprises.orbital.evekit.marketdata.Order;
+import io.prometheus.client.Histogram;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -45,9 +46,14 @@ import io.swagger.annotations.ApiResponses;
     produces = "application/json",
     consumes = "application/json")
 public class SchedulerWS {
-  private static final Logger log                     = Logger.getLogger(SchedulerWS.class.getName());
-  public static final String  PROP_MIN_SCHED_INTERVAL = "enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval";
-  public static final long    DEF_MIN_SCHED_INTERVAL  = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
+  private static final Logger   log                                = Logger.getLogger(SchedulerWS.class.getName());
+  public static final String    PROP_MIN_SCHED_INTERVAL            = "enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval";
+  public static final long      DEF_MIN_SCHED_INTERVAL             = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
+
+  public static final Histogram instrument_web_request_samples     = Histogram.build().name("instrument_web_request_delay_seconds")
+      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").register();
+  public static final Histogram all_instrument_web_request_samples = Histogram.build().name("all_instrument_web_request_delay_seconds")
+      .help("Interval (seconds) between updates for all instruments.").register();
 
   @Path("/takenext")
   @GET
@@ -80,18 +86,6 @@ public class SchedulerWS {
     return Response.ok().entity(next).build();
   }
 
-  protected static final int LOG_COUNTER_COUNTDOWN = 1000;
-  protected static int       logCounter            = LOG_COUNTER_COUNTDOWN;
-
-  protected static boolean updateLog() {
-    synchronized (SchedulerWS.class) {
-      logCounter--;
-      boolean out = logCounter <= 0;
-      if (out) logCounter = LOG_COUNTER_COUNTDOWN;
-      return out;
-    }
-  }
-
   @Path("/storeAll")
   @POST
   @ApiOperation(
@@ -116,8 +110,6 @@ public class SchedulerWS {
                                required = true,
                                value = "Orders to populate") final List<Order> orders) {
     final long at = OrbitalProperties.getCurrentTime();
-    boolean logit = updateLog();
-    if (logit) log.info("Processing " + orders.size() + " orders on (" + typeID + ")");
     if (orders.size() > 0) {
       // Queue up orders for processing. We'll block if the queue is backlogged.
       try {
@@ -139,13 +131,17 @@ public class SchedulerWS {
             Instrument.update(update);
           }
         });
+        long updateDelay = OrbitalProperties.getCurrentTime() - at;
+        SchedulerApplication.instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+        SchedulerApplication.all_instrument_update_samples.observe(updateDelay / 1000);
       } catch (Exception e) {
         log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
         return Response.status(Status.INTERNAL_SERVER_ERROR).build();
       }
     }
-    long finish = OrbitalProperties.getCurrentTime();
-    if (logit) log.info("Finished processing for (" + typeID + ") in " + TimeUnit.SECONDS.convert(finish - at, TimeUnit.MILLISECONDS) + " seconds");
+    long updateDelay = OrbitalProperties.getCurrentTime() - at;
+    instrument_web_request_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+    all_instrument_web_request_samples.observe(updateDelay / 1000);
     // Order accepted
     return Response.ok().build();
   }
