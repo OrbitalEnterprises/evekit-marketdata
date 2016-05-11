@@ -41,9 +41,9 @@ public class SchedulerApplication extends Application {
 
   // Metrics
   public static final Histogram instrument_update_samples       = Histogram.build().name("instrument_update_delay_seconds")
-      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").register();
+      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
   public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
-      .help("Interval (seconds) between updates for all instruments.").register();
+      .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
 
   protected static interface Maintenance {
     public boolean performMaintenance();

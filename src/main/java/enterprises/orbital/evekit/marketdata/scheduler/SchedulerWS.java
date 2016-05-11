@@ -51,9 +51,9 @@ public class SchedulerWS {
   public static final long      DEF_MIN_SCHED_INTERVAL             = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
 
   public static final Histogram instrument_web_request_samples     = Histogram.build().name("instrument_web_request_delay_seconds")
-      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").register();
+      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
   public static final Histogram all_instrument_web_request_samples = Histogram.build().name("all_instrument_web_request_delay_seconds")
-      .help("Interval (seconds) between updates for all instruments.").register();
+      .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
 
   @Path("/takenext")
   @GET
