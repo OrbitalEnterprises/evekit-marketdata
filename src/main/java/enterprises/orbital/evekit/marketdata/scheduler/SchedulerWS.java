@@ -50,8 +50,8 @@ public class SchedulerWS {
   public static final String    PROP_MIN_SCHED_INTERVAL            = "enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval";
   public static final long      DEF_MIN_SCHED_INTERVAL             = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
 
-  public static final Histogram instrument_web_request_samples     = Histogram.build().name("instrument_web_request_delay_seconds")
-      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
+  // public static final Histogram instrument_web_request_samples = Histogram.build().name("instrument_web_request_delay_seconds")
+  // .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
   public static final Histogram all_instrument_web_request_samples = Histogram.build().name("all_instrument_web_request_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
 
@@ -132,7 +132,7 @@ public class SchedulerWS {
           }
         });
         long updateDelay = OrbitalProperties.getCurrentTime() - at;
-        SchedulerApplication.instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+        // SchedulerApplication.instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
         SchedulerApplication.all_instrument_update_samples.observe(updateDelay / 1000);
       } catch (Exception e) {
         log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
@@ -140,7 +140,7 @@ public class SchedulerWS {
       }
     }
     long updateDelay = OrbitalProperties.getCurrentTime() - at;
-    instrument_web_request_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+    // instrument_web_request_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
     all_instrument_web_request_samples.observe(updateDelay / 1000);
     // Order accepted
     return Response.ok().build();

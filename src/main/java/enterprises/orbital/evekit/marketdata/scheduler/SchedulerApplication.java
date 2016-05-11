@@ -40,8 +40,8 @@ public class SchedulerApplication extends Application {
   public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 100;
 
   // Metrics
-  public static final Histogram instrument_update_samples       = Histogram.build().name("instrument_update_delay_seconds")
-      .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
+  // public static final Histogram instrument_update_samples = Histogram.build().name("instrument_update_delay_seconds")
+  // .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
   public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
 
@@ -342,7 +342,7 @@ public class SchedulerApplication extends Application {
               }
             });
             // Store update delay metrics
-            instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+            // instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
             all_instrument_update_samples.observe(updateDelay / 1000);
           } catch (Exception e) {
             log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
