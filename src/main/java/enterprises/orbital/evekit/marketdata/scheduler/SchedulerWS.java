@@ -112,7 +112,7 @@ public class SchedulerWS {
                                required = true,
                                value = "Orders to populate") final List<Order> orders) {
     final long at = OrbitalProperties.getCurrentTime();
-    if (orders.size() > 0) {
+    if (!orders.isEmpty()) {
       // Queue up orders for processing. We'll block if the queue is backlogged.
       try {
         SchedulerApplication.queueOrders(typeID, orders);

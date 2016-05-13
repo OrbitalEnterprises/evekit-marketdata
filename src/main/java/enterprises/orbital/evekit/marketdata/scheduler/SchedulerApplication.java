@@ -275,7 +275,7 @@ public class SchedulerApplication extends Application {
         try {
           // Retrieve next order batch from queue. Short circuit on empty batches (should never happen)
           final List<Order> nextBatch = source.take();
-          if (nextBatch.isEmpty()) continue;
+          assert !nextBatch.isEmpty();
           final int typeID = nextBatch.get(0).getTypeID();
           // Update time depends on when this item makes it to the front of the queue
           final long at = OrbitalProperties.getCurrentTime();
