@@ -38,7 +38,7 @@ public class SchedulerApplication extends Application {
   public static final String                                     PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
   public static final long                                       DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
   public static final String                                     PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
-  public static final int                                        DEF_ORDER_PROC_QUEUE_SIZE       = 10;
+  public static final int                                        DEF_ORDER_PROC_QUEUE_SIZE       = 100;
 
   // Metrics
   // public static final Histogram instrument_update_samples = Histogram.build().name("instrument_update_delay_seconds")
@@ -307,6 +307,7 @@ public class SchedulerApplication extends Application {
           final long at = OrbitalProperties.getCurrentTime();
           // Filter orders still in the order cache which have not changed
           final List<Order> uncached = new ArrayList<Order>();
+          final List<Order> stillLive = new ArrayList<Order>();
           for (Order next : nextBatch) {
             String hashValue = next.equivHash();
             long orderID = next.getOrderID();
@@ -315,6 +316,7 @@ public class SchedulerApplication extends Application {
               String cached = orderCache.get(orderID);
               if (cached != null && cached.equals(hashValue)) {
                 // Order unchanged, skip
+                stillLive.add(next);
                 continue;
               } else {
                 // Order either not present, or changed. Queue up and invalidate cache.
@@ -338,6 +340,13 @@ public class SchedulerApplication extends Application {
                   Set<Long> active = new HashSet<Long>();
                   active.addAll(Order.getLiveIDs(at, regionID, typeID));
                   live.put(regionID, active);
+                }
+                // Remove cached orders we know are still live
+                for (Order next : stillLive) {
+                  int regionID = next.getRegionID();
+                  if (live.containsKey(regionID)) {
+                    live.get(regionID).remove(next.getOrderID());
+                  }
                 }
                 // Populate all orders
                 for (Order next : uncached) {
