@@ -286,9 +286,9 @@ public class SchedulerApplication extends Application {
           }
           // Transact around the entire order load
           try {
-            long updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
+            EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
               @Override
-              public Long run() throws Exception {
+              public void run() throws Exception {
                 Map<Integer, Set<Long>> live = new HashMap<Integer, Set<Long>>();
                 for (int regionID : regions) {
                   Set<Long> active = new HashSet<Long>();
@@ -332,15 +332,23 @@ public class SchedulerApplication extends Application {
                     }
                   }
                 }
-                // Update complete - release this instrument
-                Instrument update = Instrument.get(typeID);
-                long last = update.getLastUpdate();
-                update.setLastUpdate(at);
-                update.setScheduled(false);
-                Instrument.update(update);
-                return at - last;
               }
             });
+            long updateDelay = 0;
+            synchronized (Instrument.class) {
+              updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
+                @Override
+                public Long run() throws Exception {
+                  // Update complete - release this instrument
+                  Instrument update = Instrument.get(typeID);
+                  long last = update.getLastUpdate();
+                  update.setLastUpdate(at);
+                  update.setScheduled(false);
+                  Instrument.update(update);
+                  return at - last;
+                }
+              });
+            }
             // Store update delay metrics
             // instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
             all_instrument_update_samples.observe(updateDelay / 1000);

@@ -76,11 +76,13 @@ public class SchedulerWS {
                            @Context HttpServletRequest request) {
     long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
     Instrument next;
-    try {
-      next = Instrument.takeNextScheduled(interval);
-    } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
-      return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+    synchronized (Instrument.class) {
+      try {
+        next = Instrument.takeNextScheduled(interval);
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error retrieving instrument, failing", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
     }
     if (next == null) return Response.status(Status.NOT_FOUND).build();
     return Response.ok().entity(next).build();
@@ -120,23 +122,25 @@ public class SchedulerWS {
       }
     } else {
       // Release instrument now since no orders were queued
-      try {
-        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-          @Override
-          public void run() throws Exception {
-            // Update complete - release this instrument
-            Instrument update = Instrument.get(typeID);
-            update.setLastUpdate(at);
-            update.setScheduled(false);
-            Instrument.update(update);
-          }
-        });
-        long updateDelay = OrbitalProperties.getCurrentTime() - at;
-        // SchedulerApplication.instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
-        SchedulerApplication.all_instrument_update_samples.observe(updateDelay / 1000);
-      } catch (Exception e) {
-        log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
-        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      synchronized (Instrument.class) {
+        try {
+          EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+            @Override
+            public void run() throws Exception {
+              // Update complete - release this instrument
+              Instrument update = Instrument.get(typeID);
+              update.setLastUpdate(at);
+              update.setScheduled(false);
+              Instrument.update(update);
+            }
+          });
+          long updateDelay = OrbitalProperties.getCurrentTime() - at;
+          // SchedulerApplication.instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
+          SchedulerApplication.all_instrument_update_samples.observe(updateDelay / 1000);
+        } catch (Exception e) {
+          log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
+          return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+        }
       }
     }
     long updateDelay = OrbitalProperties.getCurrentTime() - at;
