@@ -229,7 +229,7 @@ public class SchedulerApplication extends Application {
 
   // These functions encapsulate the current queue placement logic for order processors
   protected static void createProcessingQueues() {
-    orderProcessingQueues = new Object[5];
+    orderProcessingQueues = new Object[10];
     for (int i = 0; i < orderProcessingQueues.length; i++)
       orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
@@ -243,24 +243,34 @@ public class SchedulerApplication extends Application {
     throws InterruptedException {
     switch (typeID % 10) {
     case 0:
-    case 1:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[0]).put(orderBlock);
       break;
-    case 2:
-    case 3:
+    case 1:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[1]).put(orderBlock);
       break;
-    case 4:
-    case 5:
+    case 2:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
       break;
-    case 6:
-    case 7:
+    case 3:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[3]).put(orderBlock);
       break;
-    case 8:
-    case 9:
+    case 4:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[4]).put(orderBlock);
+      break;
+    case 5:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[5]).put(orderBlock);
+      break;
+    case 6:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[6]).put(orderBlock);
+      break;
+    case 7:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[7]).put(orderBlock);
+      break;
+    case 8:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[8]).put(orderBlock);
+      break;
+    case 9:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[9]).put(orderBlock);
       break;
     }
   }
