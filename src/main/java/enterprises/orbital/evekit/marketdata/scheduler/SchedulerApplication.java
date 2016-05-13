@@ -2,6 +2,7 @@ package enterprises.orbital.evekit.marketdata.scheduler;
 
 import java.io.IOException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -28,22 +29,43 @@ import enterprises.orbital.evekit.marketdata.Order;
 import io.prometheus.client.Histogram;
 
 public class SchedulerApplication extends Application {
-  public static final Logger    log                             = Logger.getLogger(SchedulerApplication.class.getName());
+  public static final Logger                                     log                             = Logger.getLogger(SchedulerApplication.class.getName());
   // Property which holds the name of the persistence unit for properties
-  public static final String    PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
-  public static final String    DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
-  public static final String    PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
-  public static final long      DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
-  public static final String    PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
-  public static final long      DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
-  public static final String    PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
-  public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 10;
+  public static final String                                     PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
+  public static final String                                     DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
+  public static final String                                     PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
+  public static final long                                       DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
+  public static final String                                     PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
+  public static final long                                       DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
+  public static final String                                     PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
+  public static final int                                        DEF_ORDER_PROC_QUEUE_SIZE       = 10;
 
   // Metrics
   // public static final Histogram instrument_update_samples = Histogram.build().name("instrument_update_delay_seconds")
   // .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
-  public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
+  public static final Histogram                                  all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
+
+  // Order cache
+  protected static Map<Integer, Map<Integer, Map<Long, String>>> orderCache                      = new HashMap<Integer, Map<Integer, Map<Long, String>>>();
+
+  protected static Map<Long, String> getOrderCache(
+                                                   int typeID,
+                                                   int regionID) {
+    synchronized (orderCache) {
+      Map<Integer, Map<Long, String>> typeCache = orderCache.get(typeID);
+      if (typeCache == null) {
+        typeCache = new HashMap<Integer, Map<Long, String>>();
+        orderCache.put(typeID, typeCache);
+      }
+      Map<Long, String> regionCache = typeCache.get(regionID);
+      if (regionCache == null) {
+        regionCache = new HashMap<Long, String>();
+        typeCache.put(regionID, regionCache);
+      }
+      return regionCache;
+    }
+  }
 
   protected static interface Maintenance {
     public boolean performMaintenance();
@@ -229,7 +251,7 @@ public class SchedulerApplication extends Application {
 
   // These functions encapsulate the current queue placement logic for order processors
   protected static void createProcessingQueues() {
-    orderProcessingQueues = new Object[3];
+    orderProcessingQueues = new Object[5];
     for (int i = 0; i < orderProcessingQueues.length; i++)
       orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
@@ -244,19 +266,23 @@ public class SchedulerApplication extends Application {
     switch (typeID % 10) {
     case 0:
     case 1:
-    case 2:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[0]).put(orderBlock);
       break;
+    case 2:
     case 3:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[1]).put(orderBlock);
+      break;
     case 4:
     case 5:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[1]).put(orderBlock);
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
       break;
     case 6:
     case 7:
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[3]).put(orderBlock);
+      break;
     case 8:
     case 9:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[4]).put(orderBlock);
       break;
     }
   }
@@ -274,14 +300,32 @@ public class SchedulerApplication extends Application {
       while (true) {
         try {
           // Retrieve next order batch from queue. Short circuit on empty batches (should never happen)
-          final List<Order> nextBatch = source.take();
+          List<Order> nextBatch = source.take();
           assert !nextBatch.isEmpty();
           final int typeID = nextBatch.get(0).getTypeID();
           // Update time depends on when this item makes it to the front of the queue
           final long at = OrbitalProperties.getCurrentTime();
+          // Filter orders still in the order cache which have not changed
+          final List<Order> uncached = new ArrayList<Order>();
+          for (Order next : nextBatch) {
+            String hashValue = next.equivHash();
+            long orderID = next.getOrderID();
+            Map<Long, String> orderCache = getOrderCache(typeID, next.getRegionID());
+            synchronized (orderCache) {
+              String cached = orderCache.get(orderID);
+              if (cached != null && cached.equals(hashValue)) {
+                // Order unchanged, skip
+                continue;
+              } else {
+                // Order either not present, or changed. Queue up and invalidate cache.
+                uncached.add(next);
+                orderCache.remove(orderID);
+              }
+            }
+          }
           // Extract regions we're updating in this batch
           final Set<Integer> regions = new HashSet<Integer>();
-          for (Order next : nextBatch) {
+          for (Order next : uncached) {
             regions.add(next.getRegionID());
           }
           // Transact around the entire order load
@@ -296,7 +340,7 @@ public class SchedulerApplication extends Application {
                   live.put(regionID, active);
                 }
                 // Populate all orders
-                for (Order next : nextBatch) {
+                for (Order next : uncached) {
                   int regionID = next.getRegionID();
                   // Record that this order is still live
                   live.get(regionID).remove(next.getOrderID());
@@ -320,6 +364,11 @@ public class SchedulerApplication extends Application {
                     check.setup(at);
                     Order.update(check);
                   }
+                  // Update cache
+                  Map<Long, String> orderCache = getOrderCache(typeID, next.getRegionID());
+                  synchronized (orderCache) {
+                    orderCache.put(check.getOrderID(), check.equivHash());
+                  }
                 }
                 // End of life orders no longer present in the book
                 for (int regionID : live.keySet()) {
@@ -330,10 +379,16 @@ public class SchedulerApplication extends Application {
                       eol.evolve(null, at);
                       Order.update(eol);
                     }
+                    // Update cache
+                    Map<Long, String> orderCache = getOrderCache(typeID, regionID);
+                    synchronized (orderCache) {
+                      orderCache.remove(orderID);
+                    }
                   }
                 }
               }
             });
+            // Release instrument since we've finished
             long updateDelay = 0;
             synchronized (Instrument.class) {
               updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
