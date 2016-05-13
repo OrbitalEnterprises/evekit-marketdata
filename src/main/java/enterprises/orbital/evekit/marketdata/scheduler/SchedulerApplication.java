@@ -132,21 +132,23 @@ public class SchedulerApplication extends Application {
     long stuckDelay = OrbitalProperties.getLongGlobalProperty(PROP_STUCK_UPDATE_INTERVAL, DEF_STUCK_UPDATE_INTERVAL);
     // Retrieve current list of delayed instruments
     final long threshold = OrbitalProperties.getCurrentTime() - stuckDelay;
-    try {
-      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-        @Override
-        public void run() throws Exception {
-          for (Instrument delayed : Instrument.getDelayed(threshold)) {
-            // Unschedule delayed instruments
-            log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
-            delayed.setScheduled(false);
-            Instrument.update(delayed);
+    synchronized (Instrument.class) {
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+            for (Instrument delayed : Instrument.getDelayed(threshold)) {
+              // Unschedule delayed instruments
+              log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
+              delayed.setScheduled(false);
+              Instrument.update(delayed);
+            }
           }
-        }
-      });
-    } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error updating instruments, aborting", e);
-      return false;
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error updating instruments, aborting", e);
+        return false;
+      }
     }
     log.info("Stuck instruments check complete");
     return true;
@@ -180,42 +182,44 @@ public class SchedulerApplication extends Application {
       log.log(Level.SEVERE, "Error retrieving last active market types, skipping update", e);
       return false;
     }
-    // Add instruments we're missing (active, unscheduled)
-    try {
-      EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-        @Override
-        public void run() throws Exception {
+    synchronized (Instrument.class) {
+      // Add instruments we're missing (active, unscheduled)
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
 
-          for (int next : latestActive) {
-            if (currentActive.contains(next)) continue;
-            // Instrument we either haven't seen before, or we already have but have decided to make inactive
-            Instrument existing = Instrument.get(next);
-            if (existing != null) {
-              log.info("Instrument " + next + " already exists but is inactive, leaving inactive");
-              continue;
+            for (int next : latestActive) {
+              if (currentActive.contains(next)) continue;
+              // Instrument we either haven't seen before, or we already have but have decided to make inactive
+              Instrument existing = Instrument.get(next);
+              if (existing != null) {
+                log.info("Instrument " + next + " already exists but is inactive, leaving inactive");
+                continue;
+              }
+              log.info("Adding new instrument type " + next);
+              Instrument newI = new Instrument(next, true, 0L);
+              Instrument.update(newI);
             }
-            log.info("Adding new instrument type " + next);
-            Instrument newI = new Instrument(next, true, 0L);
-            Instrument.update(newI);
-          }
-          // De-activate instruments no longer in CREST
-          for (int next : currentActive) {
-            if (latestActive.contains(next)) continue;
-            // Instrument no longer active
-            Instrument toDeactivate = Instrument.get(next);
-            if (toDeactivate == null) {
-              log.severe("Failed to find instrument " + next + " for deactivation, skipping");
-            } else {
-              log.info("Deactivating missing instrument type " + next);
-              toDeactivate.setActive(false);
-              Instrument.update(toDeactivate);
+            // De-activate instruments no longer in CREST
+            for (int next : currentActive) {
+              if (latestActive.contains(next)) continue;
+              // Instrument no longer active
+              Instrument toDeactivate = Instrument.get(next);
+              if (toDeactivate == null) {
+                log.severe("Failed to find instrument " + next + " for deactivation, skipping");
+              } else {
+                log.info("Deactivating missing instrument type " + next);
+                toDeactivate.setActive(false);
+                Instrument.update(toDeactivate);
+              }
             }
           }
-        }
-      });
-    } catch (Exception e) {
-      log.log(Level.SEVERE, "DB error updating instruments, aborting", e);
-      return false;
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error updating instruments, aborting", e);
+        return false;
+      }
     }
     log.info("Instrument map refresh complete");
     return true;
