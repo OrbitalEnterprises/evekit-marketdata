@@ -37,7 +37,7 @@ public class SchedulerApplication extends Application {
   public static final String    PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
   public static final long      DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
   public static final String    PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
-  public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 100;
+  public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 10;
 
   // Metrics
   // public static final Histogram instrument_update_samples = Histogram.build().name("instrument_update_delay_seconds")
@@ -229,7 +229,7 @@ public class SchedulerApplication extends Application {
 
   // These functions encapsulate the current queue placement logic for order processors
   protected static void createProcessingQueues() {
-    orderProcessingQueues = new Object[10];
+    orderProcessingQueues = new Object[3];
     for (int i = 0; i < orderProcessingQueues.length; i++)
       orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
@@ -243,34 +243,20 @@ public class SchedulerApplication extends Application {
     throws InterruptedException {
     switch (typeID % 10) {
     case 0:
+    case 1:
+    case 2:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[0]).put(orderBlock);
       break;
-    case 1:
+    case 3:
+    case 4:
+    case 5:
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[1]).put(orderBlock);
       break;
-    case 2:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
-      break;
-    case 3:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[3]).put(orderBlock);
-      break;
-    case 4:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[4]).put(orderBlock);
-      break;
-    case 5:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[5]).put(orderBlock);
-      break;
     case 6:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[6]).put(orderBlock);
-      break;
     case 7:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[7]).put(orderBlock);
-      break;
     case 8:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[8]).put(orderBlock);
-      break;
     case 9:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[9]).put(orderBlock);
+      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
       break;
     }
   }
