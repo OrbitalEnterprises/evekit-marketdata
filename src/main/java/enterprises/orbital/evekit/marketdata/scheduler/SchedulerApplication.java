@@ -1,10 +1,16 @@
 package enterprises.orbital.evekit.marketdata.scheduler;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -322,24 +328,24 @@ public class SchedulerApplication extends Application {
                                       List<Order> bids,
                                       List<Order> asks)
     throws IOException {
-    String dir = OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR) + File.separator + "books" + File.separator + String.valueOf(typeID)
-        + File.separator + String.valueOf(regionID);
-    File bookDir = new File(dir);
-    if (!bookDir.exists() && !bookDir.mkdirs()) throw new IOException("Failed to create parent directory: " + bookDir);
-    SimpleDateFormat formatter = new SimpleDateFormat("yyyy_MM_dd");
-    String snapFileName = String.format("snap_%s_%d.book", formatter.format(new Date(at)), at);
-    File snapFile = new File(bookDir, snapFileName);
-    PrintWriter snapOut = new PrintWriter(new FileWriter(snapFile));
-    try {
-      // Write header
-      snapOut.format("%d\n%d\n", bids.size(), asks.size());
-      // Dump book
-      for (Order next : bids)
-        writeOrder(next, snapOut);
-      for (Order next : asks)
-        writeOrder(next, snapOut);
-    } finally {
-      snapOut.close();
+    Map<String, String> env = new HashMap<>();
+    env.put("create", "true");
+    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+    String bookFileName = String.format("book_%d_%s.zip", regionID, formatter.format(new Date(at)));
+    String snapEntryName = String.format("snap_%d", at);
+    Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR), "books", String.valueOf(typeID), bookFileName);
+    URI outURI = URI.create("file:" + file.toUri());
+    try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
+      Path entry = fs.getPath(snapEntryName);
+      try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
+        // Write header
+        snapOut.format("%d\n%d\n", bids.size(), asks.size());
+        // Dump book
+        for (Order next : bids)
+          writeOrder(next, snapOut);
+        for (Order next : asks)
+          writeOrder(next, snapOut);
+      }
     }
   }
 
