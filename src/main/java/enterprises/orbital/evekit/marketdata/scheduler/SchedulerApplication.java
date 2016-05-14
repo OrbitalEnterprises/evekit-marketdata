@@ -333,8 +333,10 @@ public class SchedulerApplication extends Application {
     SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
     String bookFileName = String.format("book_%d_%s.zip", regionID, formatter.format(new Date(at)));
     String snapEntryName = String.format("snap_%d", at);
+    Path dir = Paths.get(OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR), "books", String.valueOf(typeID));
+    Files.createDirectories(dir);
     Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR), "books", String.valueOf(typeID), bookFileName);
-    URI outURI = URI.create("file:" + file.toUri());
+    URI outURI = URI.create("jar:file:" + file);
     try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
       Path entry = fs.getPath(snapEntryName);
       try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
