@@ -381,7 +381,7 @@ public class SchedulerApplication extends Application {
           // Dump each book to the appropriate file
           for (int regionID : regionSet) {
             List<Order> bids = regionBids.get(regionID);
-            List<Order> asks = regionBids.get(regionID);
+            List<Order> asks = regionAsks.get(regionID);
             writeBookSnap(at, typeID, regionID, bids != null ? bids : Collections.<Order> emptyList(), asks != null ? asks : Collections.<Order> emptyList());
           }
           try {
