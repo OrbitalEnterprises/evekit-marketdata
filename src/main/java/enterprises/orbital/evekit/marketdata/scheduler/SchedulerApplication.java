@@ -325,7 +325,7 @@ public class SchedulerApplication extends Application {
     String dir = OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR) + File.separator + "books" + File.separator + String.valueOf(typeID)
         + File.separator + String.valueOf(regionID);
     File bookDir = new File(dir);
-    if (!bookDir.mkdirs()) throw new IOException("Failed to create parent directory: " + bookDir);
+    if (!bookDir.exists() && !bookDir.mkdirs()) throw new IOException("Failed to create parent directory: " + bookDir);
     SimpleDateFormat formatter = new SimpleDateFormat("yyyy_MM_dd");
     String snapFileName = String.format("snap_%s_%d.book", formatter.format(new Date(at)), at);
     File snapFile = new File(bookDir, snapFileName);
