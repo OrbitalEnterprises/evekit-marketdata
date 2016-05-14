@@ -1,8 +1,15 @@
 package enterprises.orbital.evekit.marketdata.scheduler;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -29,43 +36,22 @@ import enterprises.orbital.evekit.marketdata.Order;
 import io.prometheus.client.Histogram;
 
 public class SchedulerApplication extends Application {
-  public static final Logger                                     log                             = Logger.getLogger(SchedulerApplication.class.getName());
+  public static final Logger    log                             = Logger.getLogger(SchedulerApplication.class.getName());
   // Property which holds the name of the persistence unit for properties
-  public static final String                                     PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
-  public static final String                                     DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
-  public static final String                                     PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
-  public static final long                                       DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
-  public static final String                                     PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
-  public static final long                                       DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
-  public static final String                                     PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
-  public static final int                                        DEF_ORDER_PROC_QUEUE_SIZE       = 100;
+  public static final String    PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
+  public static final String    DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
+  public static final String    PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
+  public static final long      DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
+  public static final String    PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
+  public static final long      DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
+  public static final String    PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
+  public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 100;
+  public static final String    PROP_BOOK_DIR                   = "enterprises.orbital.evekit.marketdata-scheduler.bookDir";
+  public static final String    DEF_BOOK_DIR                    = "";
 
   // Metrics
-  // public static final Histogram instrument_update_samples = Histogram.build().name("instrument_update_delay_seconds")
-  // .help("Interval (seconds) between updates for an instrument.").labelNames("type_id").linearBuckets(0, 60, 120).register();
-  public static final Histogram                                  all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
+  public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
-
-  // Order cache
-  protected static Map<Integer, Map<Integer, Map<Long, String>>> orderCache                      = new HashMap<Integer, Map<Integer, Map<Long, String>>>();
-
-  protected static Map<Long, String> getOrderCache(
-                                                   int typeID,
-                                                   int regionID) {
-    synchronized (orderCache) {
-      Map<Integer, Map<Long, String>> typeCache = orderCache.get(typeID);
-      if (typeCache == null) {
-        typeCache = new HashMap<Integer, Map<Long, String>>();
-        orderCache.put(typeID, typeCache);
-      }
-      Map<Long, String> regionCache = typeCache.get(regionID);
-      if (regionCache == null) {
-        regionCache = new HashMap<Long, String>();
-        typeCache.put(regionID, regionCache);
-      }
-      return regionCache;
-    }
-  }
 
   protected static interface Maintenance {
     public boolean performMaintenance();
@@ -287,6 +273,76 @@ public class SchedulerApplication extends Application {
     }
   }
 
+  protected static List<Order> getOrderList(
+                                            Map<Integer, List<Order>> map,
+                                            int region) {
+    List<Order> list = map.get(region);
+    if (list == null) {
+      list = new ArrayList<Order>();
+      map.put(region, list);
+    }
+    return list;
+  }
+
+  protected static Comparator<Order> bidComparator = new Comparator<Order>() {
+
+                                                     @Override
+                                                     public int compare(
+                                                                        Order o1,
+                                                                        Order o2) {
+                                                       // Sort bids highest prices first
+                                                       return -o1.getPrice().compareTo(o2.getPrice());
+                                                     }
+
+                                                   };
+
+  protected static Comparator<Order> askComparator = new Comparator<Order>() {
+
+                                                     @Override
+                                                     public int compare(
+                                                                        Order o1,
+                                                                        Order o2) {
+                                                       // Sort asks lowest prices first
+                                                       return o1.getPrice().compareTo(o2.getPrice());
+                                                     }
+
+                                                   };
+
+  protected static void writeOrder(
+                                   Order o,
+                                   PrintWriter out) {
+    out.format("%d,%b,%d,%.2f,%d,%d,%d,%s,%d,%d\n", o.getOrderID(), o.isBuy(), o.getIssued(), o.getPrice(), o.getVolumeEntered(), o.getMinVolume(),
+               o.getVolume(), o.getOrderRange(), o.getLocationID(), o.getDuration());
+  }
+
+  protected static void writeBookSnap(
+                                      long at,
+                                      int typeID,
+                                      int regionID,
+                                      List<Order> bids,
+                                      List<Order> asks)
+    throws IOException {
+    String dir = OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR) + File.separator + "books" + File.separator + String.valueOf(typeID)
+        + File.separator + String.valueOf(regionID);
+    File bookDir = new File(dir);
+    if (!bookDir.mkdirs()) throw new IOException("Failed to create parent directory: " + bookDir);
+    SimpleDateFormat formatter = new SimpleDateFormat("yyyy_MM_dd");
+    String snapFileName = String.format("snap_%s_%d.book", formatter.format(new Date(at)), at);
+    File snapFile = new File(bookDir, snapFileName);
+    PrintWriter snapOut = new PrintWriter(new FileWriter(snapFile));
+    try {
+      // Write header
+      snapOut.format("%d\n%d\n", bids.size(), asks.size());
+      // Dump book
+      for (Order next : bids)
+        writeOrder(next, snapOut);
+      for (Order next : asks)
+        writeOrder(next, snapOut);
+    } finally {
+      snapOut.close();
+    }
+  }
+
   protected static class OrderProcessor implements Runnable {
     private ArrayBlockingQueue<List<Order>> source;
 
@@ -305,98 +361,30 @@ public class SchedulerApplication extends Application {
           final int typeID = nextBatch.get(0).getTypeID();
           // Update time depends on when this item makes it to the front of the queue
           final long at = OrbitalProperties.getCurrentTime();
-          // Filter orders still in the order cache which have not changed
-          final List<Order> uncached = new ArrayList<Order>();
-          final List<Order> stillLive = new ArrayList<Order>();
+          // Group orders by region and sort
+          // region -> bids, region -> asks
+          Map<Integer, List<Order>> regionBids = new HashMap<Integer, List<Order>>();
+          Map<Integer, List<Order>> regionAsks = new HashMap<Integer, List<Order>>();
+          Set<Integer> regionSet = new HashSet<Integer>();
           for (Order next : nextBatch) {
-            String hashValue = next.equivHash();
-            long orderID = next.getOrderID();
-            Map<Long, String> orderCache = getOrderCache(typeID, next.getRegionID());
-            synchronized (orderCache) {
-              String cached = orderCache.get(orderID);
-              if (cached != null && cached.equals(hashValue)) {
-                // Order unchanged, skip
-                stillLive.add(next);
-                continue;
-              } else {
-                // Order either not present, or changed. Queue up and invalidate cache.
-                uncached.add(next);
-                orderCache.remove(orderID);
-              }
-            }
+            int regionID = next.getRegionID();
+            regionSet.add(regionID);
+            getOrderList(next.isBuy() ? regionBids : regionAsks, regionID).add(next);
           }
-          // Extract regions we're updating in this batch
-          final Set<Integer> regions = new HashSet<Integer>();
-          for (Order next : uncached) {
-            regions.add(next.getRegionID());
+          // Sort all order lists
+          for (List<Order> nextBids : regionBids.values()) {
+            Collections.sort(nextBids, bidComparator);
           }
-          // Transact around the entire order load
+          for (List<Order> nextAsks : regionAsks.values()) {
+            Collections.sort(nextAsks, askComparator);
+          }
+          // Dump each book to the appropriate file
+          for (int regionID : regionSet) {
+            List<Order> bids = regionBids.get(regionID);
+            List<Order> asks = regionBids.get(regionID);
+            writeBookSnap(at, typeID, regionID, bids != null ? bids : Collections.<Order> emptyList(), asks != null ? asks : Collections.<Order> emptyList());
+          }
           try {
-            EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
-              @Override
-              public void run() throws Exception {
-                Map<Integer, Set<Long>> live = new HashMap<Integer, Set<Long>>();
-                for (int regionID : regions) {
-                  Set<Long> active = new HashSet<Long>();
-                  active.addAll(Order.getLiveIDs(at, regionID, typeID));
-                  live.put(regionID, active);
-                }
-                // Remove cached orders we know are still live
-                for (Order next : stillLive) {
-                  int regionID = next.getRegionID();
-                  if (live.containsKey(regionID)) {
-                    live.get(regionID).remove(next.getOrderID());
-                  }
-                }
-                // Populate all orders
-                for (Order next : uncached) {
-                  int regionID = next.getRegionID();
-                  // Record that this order is still live
-                  live.get(regionID).remove(next.getOrderID());
-                  // Construct new potential order
-                  Order check = new Order(
-                      regionID, typeID, next.getOrderID(), next.isBuy(), next.getIssued(), next.getPrice(), next.getVolumeEntered(), next.getMinVolume(),
-                      next.getVolume(), next.getOrderRange(), next.getLocationID(), next.getDuration());
-                  // Check whether we already know about this order
-                  Order existing = Order.get(at, regionID, typeID, check.getOrderID());
-                  // If the order exists and has changed, then evolve. Otherwise store the new order.
-                  if (existing != null) {
-                    // Existing, evolve if changed
-                    if (!existing.equivalent(check)) {
-                      // Evolve
-                      existing.evolve(check, at);
-                      Order.update(existing);
-                      Order.update(check);
-                    }
-                  } else {
-                    // New entity
-                    check.setup(at);
-                    Order.update(check);
-                  }
-                  // Update cache
-                  Map<Long, String> orderCache = getOrderCache(typeID, next.getRegionID());
-                  synchronized (orderCache) {
-                    orderCache.put(check.getOrderID(), check.equivHash());
-                  }
-                }
-                // End of life orders no longer present in the book
-                for (int regionID : live.keySet()) {
-                  for (long orderID : live.get(regionID)) {
-                    Order eol = Order.get(at, regionID, typeID, orderID);
-                    if (eol != null) {
-                      // NOTE: order may not longer exist if we're racing with another update
-                      eol.evolve(null, at);
-                      Order.update(eol);
-                    }
-                    // Update cache
-                    Map<Long, String> orderCache = getOrderCache(typeID, regionID);
-                    synchronized (orderCache) {
-                      orderCache.remove(orderID);
-                    }
-                  }
-                }
-              }
-            });
             // Release instrument since we've finished
             long updateDelay = 0;
             synchronized (Instrument.class) {
@@ -414,7 +402,6 @@ public class SchedulerApplication extends Application {
               });
             }
             // Store update delay metrics
-            // instrument_update_samples.labels(String.valueOf(typeID)).observe(updateDelay / 1000);
             all_instrument_update_samples.observe(updateDelay / 1000);
           } catch (Exception e) {
             log.log(Level.SEVERE, "DB error storing order, failing: (" + typeID + ")", e);
