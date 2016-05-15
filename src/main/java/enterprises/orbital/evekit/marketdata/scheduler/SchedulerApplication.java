@@ -21,6 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -331,6 +332,7 @@ public class SchedulerApplication extends Application {
     Map<String, String> env = new HashMap<>();
     env.put("create", "true");
     SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
     String bookFileName = String.format("book_%d_%s.zip", regionID, formatter.format(new Date(at)));
     String snapEntryName = String.format("snap_%d", at);
     Path dir = Paths.get(OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR), "books", String.valueOf(typeID));
