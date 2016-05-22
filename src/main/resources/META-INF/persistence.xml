@@ -11,7 +11,6 @@
         </description>
         
         <class>enterprises.orbital.db.DBProperty</class>
-        <class>enterprises.orbital.evekit.marketdata.Order</class>
         <class>enterprises.orbital.evekit.marketdata.Instrument</class>
 
         <properties>

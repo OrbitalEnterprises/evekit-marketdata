@@ -2,6 +2,8 @@ package enterprises.orbital.evekit.marketdata.scheduler;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +41,7 @@ import enterprises.orbital.db.DBPropertyProvider;
 import enterprises.orbital.evekit.marketdata.CRESTClient;
 import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
+import enterprises.orbital.evekit.marketdata.MarketHistory;
 import enterprises.orbital.evekit.marketdata.Order;
 import io.prometheus.client.Histogram;
 
@@ -55,10 +58,14 @@ public class SchedulerApplication extends Application {
   public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 100;
   public static final String    PROP_BOOK_DIR                   = "enterprises.orbital.evekit.marketdata-scheduler.bookDir";
   public static final String    DEF_BOOK_DIR                    = "";
+  public static final String    PROP_HISTORY_DIR                = "enterprises.orbital.evekit.marketdata-scheduler.historyDir";
+  public static final String    DEF_HISTORY_DIR                 = "";
 
   // Metrics
   public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
-      .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
+      .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 240).register();
+  public static final Histogram all_history_update_samples      = Histogram.build().name("all_history_update_delay_seconds")
+      .help("Interval (seconds) between history updates for all instruments.").linearBuckets(0, 60, 480).register();
 
   protected static interface Maintenance {
     public boolean performMaintenance();
@@ -124,9 +131,13 @@ public class SchedulerApplication extends Application {
       }
 
     }))).start();
-    // Schedule order processing thread
+    // Schedule order processing threads
     for (int i = 0; i < orderProcessingQueues.length; i++) {
       (new Thread(new OrderProcessor((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[i]))).start();
+    }
+    // Schedule history processing threads
+    for (int i = 0; i < historyProcessingQueues.length; i++) {
+      (new Thread(new HistoryProcessor((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[i]))).start();
     }
   }
 
@@ -156,6 +167,12 @@ public class SchedulerApplication extends Application {
               // Unschedule delayed instruments
               log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
               delayed.setScheduled(false);
+              Instrument.update(delayed);
+            }
+            for (Instrument delayed : Instrument.getHistoryDelayed(threshold)) {
+              // Unschedule delayed instruments
+              log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
+              delayed.setHistoryScheduled(false);
               Instrument.update(delayed);
             }
           }
@@ -213,7 +230,7 @@ public class SchedulerApplication extends Application {
                 continue;
               }
               log.info("Adding new instrument type " + next);
-              Instrument newI = new Instrument(next, true, 0L);
+              Instrument newI = new Instrument(next, true, 0L, 0L);
               Instrument.update(newI);
             }
             // De-activate instruments no longer in CREST
@@ -241,12 +258,17 @@ public class SchedulerApplication extends Application {
   }
 
   public static Object[] orderProcessingQueues;
+  public static Object[] historyProcessingQueues;
 
   // These functions encapsulate the current queue placement logic for order processors
   protected static void createProcessingQueues() {
     orderProcessingQueues = new Object[5];
     for (int i = 0; i < orderProcessingQueues.length; i++)
       orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
+          (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
+    historyProcessingQueues = new Object[1];
+    for (int i = 0; i < historyProcessingQueues.length; i++)
+      historyProcessingQueues[i] = new ArrayBlockingQueue<List<MarketHistory>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
   }
 
@@ -278,6 +300,15 @@ public class SchedulerApplication extends Application {
       ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[4]).put(orderBlock);
       break;
     }
+  }
+
+  // This function encapsulates the queue placement logic for the history processor
+  @SuppressWarnings("unchecked")
+  public static void queueHistory(
+                                  int typeID,
+                                  List<MarketHistory> historyBlock)
+    throws InterruptedException {
+    ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[0]).put(historyBlock);
   }
 
   protected static List<Order> getOrderList(
@@ -322,6 +353,30 @@ public class SchedulerApplication extends Application {
                o.getVolume(), o.getOrderRange(), o.getLocationID(), o.getDuration());
   }
 
+  protected static void writeHistory(
+                                     MarketHistory h,
+                                     PrintWriter out) {
+    out.format("%d,%d,%d,%.2f,%.2f,%.2f,%d,%d\n", h.getTypeID(), h.getRegionID(), h.getOrderCount(), h.getLowPrice(), h.getHighPrice(), h.getAvgPrice(),
+               h.getVolume(), h.getDate());
+  }
+
+  protected static MarketHistory readHistory(
+                                             Path src)
+    throws IOException {
+    // Convert from write format above
+    List<String> data = Files.readAllLines(src);
+    String[] parse = data.get(0).split(",");
+    int typeID = Integer.valueOf(parse[0]);
+    int regionID = Integer.valueOf(parse[1]);
+    int orderCount = Integer.valueOf(parse[2]);
+    BigDecimal lowPrice = BigDecimal.valueOf(Double.valueOf(parse[3]).doubleValue()).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal highPrice = BigDecimal.valueOf(Double.valueOf(parse[4]).doubleValue()).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal avgPrice = BigDecimal.valueOf(Double.valueOf(parse[5]).doubleValue()).setScale(2, RoundingMode.HALF_UP);
+    long volume = Long.valueOf(parse[6]);
+    long date = Long.valueOf(parse[7]);
+    return new MarketHistory(typeID, regionID, orderCount, lowPrice, highPrice, avgPrice, volume, date);
+  }
+
   protected static void writeBookSnap(
                                       long at,
                                       int typeID,
@@ -338,7 +393,7 @@ public class SchedulerApplication extends Application {
     Path dir = Paths.get(OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR), "books", String.valueOf(typeID));
     Files.createDirectories(dir);
     Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_BOOK_DIR, DEF_BOOK_DIR), "books", String.valueOf(typeID), bookFileName);
-    URI outURI = URI.create("jar:file:" + file);
+    URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
     try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
       Path entry = fs.getPath(snapEntryName);
       try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
@@ -349,6 +404,51 @@ public class SchedulerApplication extends Application {
           writeOrder(next, snapOut);
         for (Order next : asks)
           writeOrder(next, snapOut);
+      }
+    }
+  }
+
+  protected static void writeHistorySnap(
+                                         long at,
+                                         int typeID,
+                                         MarketHistory history)
+    throws IOException {
+    // History files are stored in a zip with records listed by date.
+    // The history file is organized by typeID and the date the snapshot was recorded:
+    //
+    // <root>/history/<typeID>/history_<regionID>_<snapDateString>.zip
+    //
+    // Within this file, records are indexed by the regionID and date listed in the MarketHistory object:
+    //
+    // snap_<regionid>_<markethistory_date_millis>
+    //
+    // Records are only updated if they have changed.
+    Map<String, String> env = new HashMap<>();
+    env.put("create", "true");
+    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+    int regionID = history.getRegionID();
+    String historyFileName = String.format("history_%d_%s.zip", regionID, formatter.format(new Date(at)));
+    String snapEntryName = String.format("snap_%d_%d", regionID, history.getDate());
+    Path dir = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID));
+    Files.createDirectories(dir);
+    Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID), historyFileName);
+    URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
+    try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
+      Path entry = fs.getPath(snapEntryName);
+      // Check whether this snap already exists
+      if (Files.exists(entry)) {
+        // Snap exists, check whether it's equivalent. If it is, then we're done. Otherwise, delete and create a new version.
+        MarketHistory check = readHistory(entry);
+        if (check.equals(history))
+          // Skip - equivalent
+          return;
+        // Not equivalent, delete current file
+        Files.delete(entry);
+      }
+      try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
+        // Each snap contains a single MarketHistory record
+        writeHistory(history, snapOut);
       }
     }
   }
@@ -421,6 +521,59 @@ public class SchedulerApplication extends Application {
           System.exit(0);
         } catch (Exception f) {
           log.log(Level.SEVERE, "Fatal error caught in order processing loop, logging and attempting to continue", f);
+        }
+      }
+    }
+  }
+
+  protected static class HistoryProcessor implements Runnable {
+    private ArrayBlockingQueue<List<MarketHistory>> source;
+
+    public HistoryProcessor(ArrayBlockingQueue<List<MarketHistory>> source) {
+      this.source = source;
+    }
+
+    @Override
+    public void run() {
+
+      while (true) {
+        try {
+          // Retrieve next history batch from queue. Short circuit on empty batches (should never happen)
+          List<MarketHistory> nextBatch = source.take();
+          assert !nextBatch.isEmpty();
+          final int typeID = nextBatch.get(0).getTypeID();
+          // Dump each history item to the appropriate file unless the file already exists and is unchanged.
+          final long at = OrbitalProperties.getCurrentTime();
+          for (MarketHistory next : nextBatch) {
+            writeHistorySnap(at, typeID, next);
+          }
+          try {
+            // Release instrument since we've finished
+            long updateDelay = 0;
+            synchronized (Instrument.class) {
+              updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
+                @Override
+                public Long run() throws Exception {
+                  // Update complete - release this instrument
+                  Instrument update = Instrument.get(typeID);
+                  long last = update.getLastHistoryUpdate();
+                  update.setLastHistoryUpdate(at);
+                  update.setHistoryScheduled(false);
+                  Instrument.update(update);
+                  return at - last;
+                }
+              });
+            }
+            // Store update delay metrics
+            all_history_update_samples.observe(updateDelay / 1000);
+          } catch (Exception e) {
+            log.log(Level.SEVERE, "DB error storing history, failing: (" + typeID + ")", e);
+          }
+        } catch (InterruptedException e) {
+          log.log(Level.INFO, "Break requested, exiting", e);
+          System.exit(0);
+        } catch (Exception f) {
+          log.log(Level.SEVERE, "Fatal error caught in history processing loop, logging and attempting to continue", f);
         }
       }
     }
