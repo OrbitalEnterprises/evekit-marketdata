@@ -455,16 +455,8 @@ public class SchedulerApplication extends Application {
     URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
     try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
       Path entry = fs.getPath(snapEntryName);
-      // Check whether this snap already exists
-      if (Files.exists(entry)) {
-        // Snap exists, check whether it's equivalent. If it is, then we're done. Otherwise, delete and create a new version.
-        MarketHistory check = readHistory(entry);
-        if (check.equals(history))
-          // Skip - equivalent
-          return;
-        // Not equivalent, delete current file
-        Files.delete(entry);
-      }
+      // If file exists we can exit as snaps are immutable
+      if (Files.exists(entry)) return;
       try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
         // Each snap contains a single MarketHistory record
         writeHistory(history, snapOut);
