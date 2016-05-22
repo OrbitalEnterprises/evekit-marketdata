@@ -46,25 +46,27 @@ import enterprises.orbital.evekit.marketdata.Order;
 import io.prometheus.client.Histogram;
 
 public class SchedulerApplication extends Application {
-  public static final Logger    log                             = Logger.getLogger(SchedulerApplication.class.getName());
+  public static final Logger    log                                = Logger.getLogger(SchedulerApplication.class.getName());
   // Property which holds the name of the persistence unit for properties
-  public static final String    PROP_APP_PATH                   = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
-  public static final String    DEF_APP_PATH                    = "http://localhost/marketdata-scheduler";
-  public static final String    PROP_INSTRUMENT_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
-  public static final long      DEF_INSTRUMENT_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
-  public static final String    PROP_STUCK_UPDATE_INTERVAL      = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
-  public static final long      DEF_STUCK_UPDATE_INTERVAL       = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
-  public static final String    PROP_ORDER_PROC_QUEUE_SIZE      = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
-  public static final int       DEF_ORDER_PROC_QUEUE_SIZE       = 100;
-  public static final String    PROP_BOOK_DIR                   = "enterprises.orbital.evekit.marketdata-scheduler.bookDir";
-  public static final String    DEF_BOOK_DIR                    = "";
-  public static final String    PROP_HISTORY_DIR                = "enterprises.orbital.evekit.marketdata-scheduler.historyDir";
-  public static final String    DEF_HISTORY_DIR                 = "";
+  public static final String    PROP_APP_PATH                      = "enterprises.orbital.evekit.marketdata-scheduler.apppath";
+  public static final String    DEF_APP_PATH                       = "http://localhost/marketdata-scheduler";
+  public static final String    PROP_INSTRUMENT_UPDATE_INTERVAL    = "enterprises.orbital.evekit.marketdata-scheduler.instUpdateInt";
+  public static final long      DEF_INSTRUMENT_UPDATE_INTERVAL     = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
+  public static final String    PROP_STUCK_UPDATE_INTERVAL         = "enterprises.orbital.evekit.marketdata-scheduler.instStuckInt";
+  public static final long      DEF_STUCK_UPDATE_INTERVAL          = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
+  public static final String    PROP_STUCK_HISTORY_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instStuckHistoryInt";
+  public static final long      DEF_STUCK_HISTORY_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(1, TimeUnit.HOURS);
+  public static final String    PROP_ORDER_PROC_QUEUE_SIZE         = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
+  public static final int       DEF_ORDER_PROC_QUEUE_SIZE          = 100;
+  public static final String    PROP_BOOK_DIR                      = "enterprises.orbital.evekit.marketdata-scheduler.bookDir";
+  public static final String    DEF_BOOK_DIR                       = "";
+  public static final String    PROP_HISTORY_DIR                   = "enterprises.orbital.evekit.marketdata-scheduler.historyDir";
+  public static final String    DEF_HISTORY_DIR                    = "";
 
   // Metrics
-  public static final Histogram all_instrument_update_samples   = Histogram.build().name("all_instrument_update_delay_seconds")
+  public static final Histogram all_instrument_update_samples      = Histogram.build().name("all_instrument_update_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 240).register();
-  public static final Histogram all_history_update_samples      = Histogram.build().name("all_history_update_delay_seconds")
+  public static final Histogram all_history_update_samples         = Histogram.build().name("all_history_update_delay_seconds")
       .help("Interval (seconds) between history updates for all instruments.").linearBuckets(0, 60, 480).register();
 
   protected static interface Maintenance {
@@ -156,8 +158,10 @@ public class SchedulerApplication extends Application {
   protected boolean unstickInstruments() {
     log.info("Checking for stuck instruments");
     long stuckDelay = OrbitalProperties.getLongGlobalProperty(PROP_STUCK_UPDATE_INTERVAL, DEF_STUCK_UPDATE_INTERVAL);
+    long stuckHistoryDelay = OrbitalProperties.getLongGlobalProperty(PROP_STUCK_HISTORY_UPDATE_INTERVAL, DEF_STUCK_HISTORY_UPDATE_INTERVAL);
     // Retrieve current list of delayed instruments
     final long threshold = OrbitalProperties.getCurrentTime() - stuckDelay;
+    final long historyThreshold = OrbitalProperties.getCurrentTime() - stuckHistoryDelay;
     synchronized (Instrument.class) {
       try {
         EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
@@ -165,13 +169,13 @@ public class SchedulerApplication extends Application {
           public void run() throws Exception {
             for (Instrument delayed : Instrument.getDelayed(threshold)) {
               // Unschedule delayed instruments
-              log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
+              log.info("Unsticking (order) " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
               delayed.setScheduled(false);
               Instrument.update(delayed);
             }
-            for (Instrument delayed : Instrument.getHistoryDelayed(threshold)) {
+            for (Instrument delayed : Instrument.getHistoryDelayed(historyThreshold)) {
               // Unschedule delayed instruments
-              log.info("Unsticking " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
+              log.info("Unsticking (history) " + delayed.getTypeID() + " which has been scheduled since " + delayed.getScheduleTime());
               delayed.setHistoryScheduled(false);
               Instrument.update(delayed);
             }
