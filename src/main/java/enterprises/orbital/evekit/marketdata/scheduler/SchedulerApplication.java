@@ -270,7 +270,7 @@ public class SchedulerApplication extends Application {
     for (int i = 0; i < orderProcessingQueues.length; i++)
       orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
-    historyProcessingQueues = new Object[2];
+    historyProcessingQueues = new Object[5];
     for (int i = 0; i < historyProcessingQueues.length; i++)
       historyProcessingQueues[i] = new ArrayBlockingQueue<List<MarketHistory>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
@@ -282,28 +282,8 @@ public class SchedulerApplication extends Application {
                                  int typeID,
                                  List<Order> orderBlock)
     throws InterruptedException {
-    switch (typeID % 10) {
-    case 0:
-    case 1:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[0]).put(orderBlock);
-      break;
-    case 2:
-    case 3:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[1]).put(orderBlock);
-      break;
-    case 4:
-    case 5:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[2]).put(orderBlock);
-      break;
-    case 6:
-    case 7:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[3]).put(orderBlock);
-      break;
-    case 8:
-    case 9:
-      ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[4]).put(orderBlock);
-      break;
-    }
+    int queue = typeID % orderProcessingQueues.length;
+    ((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[queue]).put(orderBlock);
   }
 
   // This function encapsulates the queue placement logic for the history processor
@@ -312,22 +292,8 @@ public class SchedulerApplication extends Application {
                                   int typeID,
                                   List<MarketHistory> historyBlock)
     throws InterruptedException {
-    switch (typeID % 10) {
-    case 0:
-    case 1:
-    case 2:
-    case 3:
-    case 4:
-      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[0]).put(historyBlock);
-      break;
-    case 5:
-    case 6:
-    case 7:
-    case 8:
-    case 9:
-      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[1]).put(historyBlock);
-      break;
-    }
+    int queue = typeID % historyProcessingQueues.length;
+    ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[queue]).put(historyBlock);
   }
 
   protected static List<Order> getOrderList(
