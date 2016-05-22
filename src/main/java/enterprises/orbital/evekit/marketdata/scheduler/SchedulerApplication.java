@@ -266,7 +266,7 @@ public class SchedulerApplication extends Application {
     for (int i = 0; i < orderProcessingQueues.length; i++)
       orderProcessingQueues[i] = new ArrayBlockingQueue<List<Order>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
-    historyProcessingQueues = new Object[1];
+    historyProcessingQueues = new Object[5];
     for (int i = 0; i < historyProcessingQueues.length; i++)
       historyProcessingQueues[i] = new ArrayBlockingQueue<List<MarketHistory>>(
           (int) OrbitalProperties.getLongGlobalProperty(PROP_ORDER_PROC_QUEUE_SIZE, DEF_ORDER_PROC_QUEUE_SIZE), true);
@@ -308,7 +308,28 @@ public class SchedulerApplication extends Application {
                                   int typeID,
                                   List<MarketHistory> historyBlock)
     throws InterruptedException {
-    ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[0]).put(historyBlock);
+    switch (typeID % 10) {
+    case 0:
+    case 1:
+      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[0]).put(historyBlock);
+      break;
+    case 2:
+    case 3:
+      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[1]).put(historyBlock);
+      break;
+    case 4:
+    case 5:
+      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[2]).put(historyBlock);
+      break;
+    case 6:
+    case 7:
+      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[3]).put(historyBlock);
+      break;
+    case 8:
+    case 9:
+      ((ArrayBlockingQueue<List<MarketHistory>>) historyProcessingQueues[4]).put(historyBlock);
+      break;
+    }
   }
 
   protected static List<Order> getOrderList(
