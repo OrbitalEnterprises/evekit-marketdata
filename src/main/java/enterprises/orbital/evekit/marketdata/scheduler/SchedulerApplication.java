@@ -364,7 +364,7 @@ public class SchedulerApplication extends Application {
                                              Path src)
     throws IOException {
     // Convert from write format above
-    List<String> data = Files.readAllLines(src);
+    List<String> data = Files.readAllLines(src, StandardCharsets.UTF_8);
     String[] parse = data.get(0).split(",");
     int typeID = Integer.valueOf(parse[0]);
     int regionID = Integer.valueOf(parse[1]);
