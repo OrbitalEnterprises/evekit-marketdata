@@ -64,10 +64,12 @@ public class SchedulerApplication extends Application {
   public static final String    DEF_HISTORY_DIR                    = "";
 
   // Metrics
+  // Histogram: samples are in seconds, bucket size is one minute, max is 4 hours
   public static final Histogram all_instrument_update_samples      = Histogram.build().name("all_instrument_update_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 240).register();
+  // Histogram: samples are in seconds, bucket size is 1 hour, max is 24 hours
   public static final Histogram all_history_update_samples         = Histogram.build().name("all_history_update_delay_seconds")
-      .help("Interval (seconds) between history updates for all instruments.").linearBuckets(0, 60, 480).register();
+      .help("Interval (seconds) between history updates for all instruments.").linearBuckets(0, 3600, 24).register();
 
   protected static interface Maintenance {
     public boolean performMaintenance();
