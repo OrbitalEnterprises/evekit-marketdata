@@ -51,7 +51,7 @@ public class SchedulerWS {
   public static final String    PROP_MIN_SCHED_INTERVAL            = "enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval";
   public static final long      DEF_MIN_SCHED_INTERVAL             = TimeUnit.MILLISECONDS.convert(5, TimeUnit.MINUTES);
   public static final String    PROP_MIN_HISTORY_INTERVAL          = "enterprises.orbital.evekit.marketdata.scheduler.minHistoryInterval";
-  public static final long      DEF_MIN_HISTORY_INTERVAL           = TimeUnit.MILLISECONDS.convert(2, TimeUnit.HOURS);
+  public static final long      DEF_MIN_HISTORY_INTERVAL           = TimeUnit.MILLISECONDS.convert(20, TimeUnit.HOURS);
 
   public static final Histogram all_instrument_web_request_samples = Histogram.build().name("all_instrument_web_request_delay_seconds")
       .help("Interval (seconds) between updates for all instruments.").linearBuckets(0, 60, 120).register();
