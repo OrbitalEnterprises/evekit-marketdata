@@ -430,6 +430,45 @@ public class SchedulerApplication extends Application {
     }
   }
 
+  protected static void writeBulkHistorySnap(
+                                             long at,
+                                             int typeID,
+                                             int regionID,
+                                             List<MarketHistory> history)
+    throws IOException {
+    // History files are stored in a zip with records listed by date.
+    // The history file is organized by typeID and the date the snapshot was recorded:
+    //
+    // <root>/history/<typeID>/history_<regionID>_<snapDateString>.zip
+    //
+    // Within this file, records are indexed by the regionID and date listed in the MarketHistory object:
+    //
+    // snap_<regionid>_<markethistory_date_millis>
+    //
+    // Records are only updated if they have changed.
+    Map<String, String> env = new HashMap<>();
+    env.put("create", "true");
+    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+    String historyFileName = String.format("history_%d_%s.zip", regionID, formatter.format(new Date(at)));
+    Path dir = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID));
+    Files.createDirectories(dir);
+    Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID), historyFileName);
+    URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
+    try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
+      for (MarketHistory nextHistory : history) {
+        String snapEntryName = String.format("snap_%d_%d", regionID, nextHistory.getDate());
+        Path entry = fs.getPath(snapEntryName);
+        // If file exists we can exit as snaps are immutable
+        if (Files.exists(entry)) return;
+        try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
+          // Each snap contains a single MarketHistory record
+          writeHistory(nextHistory, snapOut);
+        }
+      }
+    }
+  }
+
   protected static class OrderProcessor implements Runnable {
     private ArrayBlockingQueue<List<Order>> source;
 
@@ -521,8 +560,18 @@ public class SchedulerApplication extends Application {
           final int typeID = nextBatch.get(0).getTypeID();
           // Dump each history item to the appropriate file unless the file already exists and is unchanged.
           final long at = OrbitalProperties.getCurrentTime();
+          Map<Integer, List<MarketHistory>> regionMap = new HashMap<Integer, List<MarketHistory>>();
           for (MarketHistory next : nextBatch) {
-            writeHistorySnap(at, typeID, next);
+            int regionID = next.getRegionID();
+            List<MarketHistory> group = regionMap.get(regionID);
+            if (group == null) {
+              group = new ArrayList<MarketHistory>();
+              regionMap.put(regionID, group);
+            }
+            group.add(next);
+          }
+          for (int regionID : regionMap.keySet()) {
+            writeBulkHistorySnap(at, typeID, regionID, regionMap.get(regionID));
           }
           try {
             // Release instrument since we've finished
