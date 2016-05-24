@@ -395,43 +395,6 @@ public class SchedulerApplication extends Application {
     }
   }
 
-  protected static void writeHistorySnap(
-                                         long at,
-                                         int typeID,
-                                         MarketHistory history)
-    throws IOException {
-    // History files are stored in a zip with records listed by date.
-    // The history file is organized by typeID and the date the snapshot was recorded:
-    //
-    // <root>/history/<typeID>/history_<regionID>_<snapDateString>.zip
-    //
-    // Within this file, records are indexed by the regionID and date listed in the MarketHistory object:
-    //
-    // snap_<regionid>_<markethistory_date_millis>
-    //
-    // Records are only updated if they have changed.
-    Map<String, String> env = new HashMap<>();
-    env.put("create", "true");
-    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
-    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-    int regionID = history.getRegionID();
-    String historyFileName = String.format("history_%d_%s.zip", regionID, formatter.format(new Date(at)));
-    String snapEntryName = String.format("snap_%d_%d", regionID, history.getDate());
-    Path dir = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID));
-    Files.createDirectories(dir);
-    Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID), historyFileName);
-    URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
-    try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
-      Path entry = fs.getPath(snapEntryName);
-      // If file exists we can exit as snaps are immutable
-      if (Files.exists(entry)) return;
-      try (PrintWriter snapOut = new PrintWriter(Files.newBufferedWriter(entry, StandardCharsets.UTF_8, StandardOpenOption.CREATE))) {
-        // Each snap contains a single MarketHistory record
-        writeHistory(history, snapOut);
-      }
-    }
-  }
-
   protected static void writeBulkHistorySnap(
                                              long at,
                                              int typeID,
@@ -457,8 +420,16 @@ public class SchedulerApplication extends Application {
     Files.createDirectories(dir);
     Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID), historyFileName);
     URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
+    long dateLowerBound = OrbitalProperties.getCurrentTime() - TimeUnit.MILLISECONDS.convert(365, TimeUnit.DAYS);
+    long dateUpperBound = OrbitalProperties.getCurrentTime();
     try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
       for (MarketHistory nextHistory : history) {
+        // Filter bad entry dates
+        if (nextHistory.getDate() < dateLowerBound || nextHistory.getDate() > dateUpperBound) {
+          log.warning("Discarding history with obviously bad date: " + nextHistory.getDate());
+          continue;
+        }
+        // Store data
         String snapEntryName = String.format("snap_%d_%d", regionID, nextHistory.getDate());
         Path entry = fs.getPath(snapEntryName);
         // If file exists we can exit as snaps are immutable
