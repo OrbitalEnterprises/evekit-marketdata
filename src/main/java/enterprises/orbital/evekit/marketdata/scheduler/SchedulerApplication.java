@@ -43,6 +43,7 @@ import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
 import enterprises.orbital.evekit.marketdata.MarketHistory;
 import enterprises.orbital.evekit.marketdata.Order;
+import enterprises.orbital.evekit.marketdata.Region;
 import io.prometheus.client.Histogram;
 
 public class SchedulerApplication extends Application {
@@ -56,6 +57,8 @@ public class SchedulerApplication extends Application {
   public static final long      DEF_STUCK_UPDATE_INTERVAL          = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
   public static final String    PROP_STUCK_HISTORY_UPDATE_INTERVAL = "enterprises.orbital.evekit.marketdata-scheduler.instStuckHistoryInt";
   public static final long      DEF_STUCK_HISTORY_UPDATE_INTERVAL  = TimeUnit.MILLISECONDS.convert(1, TimeUnit.HOURS);
+  public static final String    PROP_STUCK_REGION_UPDATE_INTERVAL  = "enterprises.orbital.evekit.marketdata-scheduler.regionStuckInt";
+  public static final long      DEF_STUCK_REGION_UPDATE_INTERVAL   = TimeUnit.MILLISECONDS.convert(10, TimeUnit.MINUTES);
   public static final String    PROP_ORDER_PROC_QUEUE_SIZE         = "enterprises.orbital.evekit.marketdata-scheduler.procQueueSize";
   public static final int       DEF_ORDER_PROC_QUEUE_SIZE          = 100;
   public static final String    PROP_BOOK_DIR                      = "enterprises.orbital.evekit.marketdata-scheduler.bookDir";
@@ -70,6 +73,9 @@ public class SchedulerApplication extends Application {
   // Histogram: samples are in seconds, bucket size is 1 hour, max is 24 hours
   public static final Histogram all_history_update_samples         = Histogram.build().name("all_history_update_delay_seconds")
       .help("Interval (seconds) between history updates for all instruments.").linearBuckets(0, 3600, 24).register();
+  // Histogram: samples are in seconds, bucket size is one minute, max is 4 hours
+  public static final Histogram all_region_update_samples          = Histogram.build().name("all_region_update_delay_seconds")
+      .help("Interval (seconds) between updates for all regions.").linearBuckets(0, 60, 240).register();
 
   protected static interface Maintenance {
     public boolean performMaintenance();
@@ -135,6 +141,27 @@ public class SchedulerApplication extends Application {
       }
 
     }))).start();
+    // Schedule region map updater to run on a timer
+    (new Thread(
+        new MaintenanceRunnable(OrbitalProperties.getLongGlobalProperty(PROP_INSTRUMENT_UPDATE_INTERVAL, DEF_INSTRUMENT_UPDATE_INTERVAL), new Maintenance() {
+
+          @Override
+          public boolean performMaintenance() {
+            return refreshRegionMap();
+          }
+
+        }))).start();
+    // Schedule stuck region cleanup to run on a timer
+    (new Thread(
+        new MaintenanceRunnable(
+            OrbitalProperties.getLongGlobalProperty(PROP_STUCK_REGION_UPDATE_INTERVAL, DEF_STUCK_REGION_UPDATE_INTERVAL), new Maintenance() {
+
+              @Override
+              public boolean performMaintenance() {
+                return unstickRegions();
+              }
+
+            }))).start();
     // Schedule order processing threads
     for (int i = 0; i < orderProcessingQueues.length; i++) {
       (new Thread(new OrderProcessor((ArrayBlockingQueue<List<Order>>) orderProcessingQueues[i]))).start();
@@ -189,6 +216,33 @@ public class SchedulerApplication extends Application {
       }
     }
     log.info("Stuck instruments check complete");
+    return true;
+  }
+
+  protected boolean unstickRegions() {
+    log.info("Checking for stuck regions");
+    long stuckDelay = OrbitalProperties.getLongGlobalProperty(PROP_STUCK_REGION_UPDATE_INTERVAL, DEF_STUCK_REGION_UPDATE_INTERVAL);
+    // Retrieve current list of delayed regions
+    final long threshold = OrbitalProperties.getCurrentTime() - stuckDelay;
+    synchronized (Region.class) {
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+            for (Region delayed : Region.getDelayed(threshold)) {
+              // Unschedule delayed regions
+              log.info("Unsticking (region) " + delayed.getRegionID() + " which has been scheduled since " + delayed.getScheduleTime());
+              delayed.setScheduled(false);
+              Region.update(delayed);
+            }
+          }
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error updating regions, aborting", e);
+        return false;
+      }
+    }
+    log.info("Stuck regions check complete");
     return true;
   }
 
@@ -256,6 +310,77 @@ public class SchedulerApplication extends Application {
         });
       } catch (Exception e) {
         log.log(Level.SEVERE, "DB error updating instruments, aborting", e);
+        return false;
+      }
+    }
+    log.info("Instrument map refresh complete");
+    return true;
+  }
+
+  protected boolean refreshRegionMap() {
+    log.info("Refreshing region map");
+    // Retrieve list of all current active region IDs
+    final Set<Integer> currentActive = new HashSet<Integer>();
+    try {
+      currentActive.addAll(Region.getActiveRegionIDs());
+    } catch (Exception e) {
+      log.log(Level.SEVERE, "DB error retrieving regions, aborting refresh", e);
+      return false;
+    }
+    // Retrieve all current regions from CREST
+    final Set<Integer> latestActive = new HashSet<Integer>();
+    try {
+      URL root = new URL(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.CREST_ROOT_PROP, EveKitMarketDataProvider.CREST_ROOT_DEFAULT));
+      CRESTClient client = new CRESTClient(root);
+      client = client.down(client.getData().getJsonObject("regions").getString("href"));
+      do {
+        JsonArray batch = client.getData().getJsonArray("items");
+        for (JsonObject next : batch.getValuesAs(JsonObject.class)) {
+          latestActive.add(next.getInt("id"));
+        }
+        if (!client.hasNext()) break;
+        client = client.next();
+      } while (true);
+    } catch (IOException e) {
+      log.log(Level.SEVERE, "Error retrieving last active regions, skipping update", e);
+      return false;
+    }
+    synchronized (Region.class) {
+      // Add regions we're missing (active, unscheduled)
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+
+            for (int next : latestActive) {
+              if (currentActive.contains(next)) continue;
+              // Region we either haven't seen before, or we already have but have decided to make inactive
+              Region existing = Region.get(next);
+              if (existing != null) {
+                log.info("Region " + next + " already exists but is inactive, leaving inactive");
+                continue;
+              }
+              log.info("Adding new region " + next);
+              Region newI = new Region(next, true, 0L);
+              Region.update(newI);
+            }
+            // De-activate regions no longer in CREST (not sure this can ever happen)
+            for (int next : currentActive) {
+              if (latestActive.contains(next)) continue;
+              // Region no longer active
+              Region toDeactivate = Region.get(next);
+              if (toDeactivate == null) {
+                log.severe("Failed to find region " + next + " for deactivation, skipping");
+              } else {
+                log.info("Deactivating missing region " + next);
+                toDeactivate.setActive(false);
+                Region.update(toDeactivate);
+              }
+            }
+          }
+        });
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error updating regions, aborting", e);
         return false;
       }
     }

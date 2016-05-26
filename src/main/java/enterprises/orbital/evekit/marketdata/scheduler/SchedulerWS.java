@@ -1,6 +1,9 @@
 package enterprises.orbital.evekit.marketdata.scheduler;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -23,6 +26,7 @@ import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
 import enterprises.orbital.evekit.marketdata.MarketHistory;
 import enterprises.orbital.evekit.marketdata.Order;
+import enterprises.orbital.evekit.marketdata.Region;
 import io.prometheus.client.Histogram;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -115,6 +119,39 @@ public class SchedulerWS {
         next = Instrument.takeNextHistoryScheduled(interval);
       } catch (Exception e) {
         log.log(Level.SEVERE, "DB error retrieving history instrument, failing", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
+    }
+    if (next == null) return Response.status(Status.NOT_FOUND).build();
+    return Response.ok().entity(next).build();
+  }
+
+  @Path("/takeregion")
+  @GET
+  @ApiOperation(
+      value = "Get next region for which marketdata should be updated.  Caller is assigned the region and is responsible for releasing it when the update is complete.")
+  @ApiResponses(
+      value = {
+          @ApiResponse(
+              code = 200,
+              message = "Next region to be updated",
+              response = Region.class),
+          @ApiResponse(
+              code = 404,
+              message = "No region ready to be scheduled , try again later."),
+          @ApiResponse(
+              code = 500,
+              message = "Internal error"),
+      })
+  public Response takeRegion(
+                             @Context HttpServletRequest request) {
+    long interval = PersistentProperty.getLongPropertyWithFallback(PROP_MIN_SCHED_INTERVAL, DEF_MIN_SCHED_INTERVAL);
+    Region next;
+    synchronized (Region.class) {
+      try {
+        next = Region.takeNextScheduled(interval);
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error retrieving region, failing", e);
         return Response.status(Status.INTERNAL_SERVER_ERROR).build();
       }
     }
@@ -237,6 +274,76 @@ public class SchedulerWS {
       }
     }
     // Order accepted
+    return Response.ok().build();
+  }
+
+  @Path("/storeRegion")
+  @POST
+  @ApiOperation(
+      value = "Populate a complete set of orders for a given region.  Clean any orders that aren't listed.  Release the region when finished")
+  @ApiResponses(
+      value = {
+          @ApiResponse(
+              code = 200,
+              message = "Population successful"),
+          @ApiResponse(
+              code = 500,
+              message = "Internal error"),
+      })
+  public Response storeRegion(
+                              @Context HttpServletRequest request,
+                              @QueryParam("regionid") @ApiParam(
+                                  name = "regionid",
+                                  required = true,
+                                  value = "Region ID of order set") final int regionID,
+                              @ApiParam(
+                                  name = "orders",
+                                  required = true,
+                                  value = "Orders to populate") final List<Order> orders) {
+    final long at = OrbitalProperties.getCurrentTime();
+    // Queue up orders for processing. We'll block if the queue is backlogged.
+    try {
+      // Organize orders by type and queue
+      Map<Integer, List<Order>> orderMap = new HashMap<>();
+      for (Order next : orders) {
+        List<Order> orderList = orderMap.get(next.getTypeID());
+        if (orderList == null) {
+          orderList = new ArrayList<>();
+          orderMap.put(next.getTypeID(), orderList);
+        }
+        orderList.add(next);
+      }
+      for (int type : orderMap.keySet()) {
+        List<Order> orderList = orderMap.get(type);
+        SchedulerApplication.queueOrders(type, orderList);
+      }
+    } catch (InterruptedException e) {
+      log.log(Level.INFO, "Break requested, exiting", e);
+      System.exit(0);
+    }
+    // Release region
+    synchronized (Region.class) {
+      try {
+        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+          @Override
+          public void run() throws Exception {
+            // Update complete - release this region
+            Region update = Region.get(regionID);
+            update.setLastUpdate(at);
+            update.setScheduled(false);
+            Region.update(update);
+          }
+        });
+        long updateDelay = OrbitalProperties.getCurrentTime() - at;
+        SchedulerApplication.all_region_update_samples.observe(updateDelay / 1000);
+      } catch (Exception e) {
+        log.log(Level.SEVERE, "DB error releasing region, failing: (" + regionID + ")", e);
+        return Response.status(Status.INTERNAL_SERVER_ERROR).build();
+      }
+    }
+    long updateDelay = OrbitalProperties.getCurrentTime() - at;
+    all_instrument_web_request_samples.observe(updateDelay / 1000);
+    // Orders accepted
     return Response.ok().build();
   }
 
