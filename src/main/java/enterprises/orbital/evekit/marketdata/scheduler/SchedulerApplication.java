@@ -617,6 +617,10 @@ public class SchedulerApplication extends Application {
                 public Long run() throws Exception {
                   // Update complete - release this instrument
                   Instrument update = Instrument.get(typeID);
+                  if (update == null) {
+                    log.warning("Unknown instrument " + typeID + ", skipping");
+                    return 0L;
+                  }
                   long last = update.getLastUpdate();
                   update.setLastUpdate(at);
                   update.setScheduled(false);
