@@ -321,6 +321,32 @@ public class SchedulerWS {
       log.log(Level.INFO, "Break requested, exiting", e);
       System.exit(0);
     }
+    long updateDelay = OrbitalProperties.getCurrentTime() - at;
+    all_instrument_web_request_samples.observe(updateDelay / 1000);
+    // Orders accepted
+    return Response.ok().build();
+  }
+
+  @Path("/releaseRegion")
+  @POST
+  @ApiOperation(
+      value = "Release a region that has been finished.")
+  @ApiResponses(
+      value = {
+          @ApiResponse(
+              code = 200,
+              message = "Release successful"),
+          @ApiResponse(
+              code = 500,
+              message = "Internal error"),
+      })
+  public Response releaseRegion(
+                                @Context HttpServletRequest request,
+                                @QueryParam("regionid") @ApiParam(
+                                    name = "regionid",
+                                    required = true,
+                                    value = "Region ID of order set") final int regionID) {
+    final long at = OrbitalProperties.getCurrentTime();
     // Release region
     synchronized (Region.class) {
       try {
@@ -341,9 +367,6 @@ public class SchedulerWS {
         return Response.status(Status.INTERNAL_SERVER_ERROR).build();
       }
     }
-    long updateDelay = OrbitalProperties.getCurrentTime() - at;
-    all_instrument_web_request_samples.observe(updateDelay / 1000);
-    // Orders accepted
     return Response.ok().build();
   }
 
