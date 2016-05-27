@@ -545,7 +545,7 @@ public class SchedulerApplication extends Application {
     Files.createDirectories(dir);
     Path file = Paths.get(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR), "history", String.valueOf(typeID), historyFileName);
     URI outURI = URI.create("jar:file:" + file.toUri().toString().substring("file://".length()));
-    long dateLowerBound = OrbitalProperties.getCurrentTime() - TimeUnit.MILLISECONDS.convert(365, TimeUnit.DAYS);
+    long dateLowerBound = OrbitalProperties.getCurrentTime() - TimeUnit.MILLISECONDS.convert(700, TimeUnit.DAYS);
     long dateUpperBound = OrbitalProperties.getCurrentTime();
     try (FileSystem fs = FileSystems.newFileSystem(outURI, env)) {
       for (MarketHistory nextHistory : history) {
