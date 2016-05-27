@@ -21,6 +21,7 @@ import javax.ws.rs.core.Response.Status;
 
 import enterprises.orbital.base.OrbitalProperties;
 import enterprises.orbital.base.PersistentProperty;
+import enterprises.orbital.db.ConnectionFactory.RunInTransaction;
 import enterprises.orbital.db.ConnectionFactory.RunInVoidTransaction;
 import enterprises.orbital.evekit.marketdata.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.Instrument;
@@ -350,17 +351,18 @@ public class SchedulerWS {
     // Release region
     synchronized (Region.class) {
       try {
-        EveKitMarketDataProvider.getFactory().runTransaction(new RunInVoidTransaction() {
+        long updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
           @Override
-          public void run() throws Exception {
+          public Long run() throws Exception {
             // Update complete - release this region
             Region update = Region.get(regionID);
+            long last = update.getLastUpdate();
             update.setLastUpdate(at);
             update.setScheduled(false);
             Region.update(update);
+            return at - last;
           }
         });
-        long updateDelay = OrbitalProperties.getCurrentTime() - at;
         SchedulerApplication.all_region_update_samples.observe(updateDelay / 1000);
       } catch (Exception e) {
         log.log(Level.SEVERE, "DB error releasing region, failing: (" + regionID + ")", e);
