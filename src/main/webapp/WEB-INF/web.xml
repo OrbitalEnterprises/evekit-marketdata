@@ -39,12 +39,12 @@
     <servlet-name>prometheus</servlet-name>
     <url-pattern>/metrics</url-pattern>
   </servlet-mapping>
-  <filter>
-    <filter-name>ApiOriginFilter</filter-name>
-    <filter-class>enterprises.orbital.evekit.marketdata.scheduler.ApiOriginFilter</filter-class>
-  </filter>
-  <filter-mapping>
-    <filter-name>ApiOriginFilter</filter-name>
-    <url-pattern>/api/*</url-pattern>
-  </filter-mapping>
+<!--   <filter> -->
+<!--     <filter-name>ApiOriginFilter</filter-name> -->
+<!--     <filter-class>enterprises.orbital.evekit.marketdata.scheduler.ApiOriginFilter</filter-class> -->
+<!--   </filter> -->
+<!--   <filter-mapping> -->
+<!--     <filter-name>ApiOriginFilter</filter-name> -->
+<!--     <url-pattern>/api/*</url-pattern> -->
+<!--   </filter-mapping> -->
 </web-app>

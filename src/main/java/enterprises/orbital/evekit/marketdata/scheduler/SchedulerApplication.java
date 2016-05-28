@@ -33,6 +33,9 @@ import javax.json.JsonArray;
 import javax.json.JsonObject;
 import javax.ws.rs.core.Application;
 
+import org.glassfish.jersey.message.GZipEncoder;
+import org.glassfish.jersey.server.filter.EncodingFilter;
+
 import enterprises.orbital.base.OrbitalProperties;
 import enterprises.orbital.base.PersistentProperty;
 import enterprises.orbital.db.ConnectionFactory.RunInTransaction;
@@ -180,6 +183,9 @@ public class SchedulerApplication extends Application {
     // Swagger additions
     resources.add(io.swagger.jaxrs.listing.ApiListingResource.class);
     resources.add(io.swagger.jaxrs.listing.SwaggerSerializers.class);
+    // Add support for GZip encoding
+    resources.add(EncodingFilter.class);
+    resources.add(GZipEncoder.class);
     // Return resource set
     return resources;
   }
