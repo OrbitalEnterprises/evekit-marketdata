@@ -18,8 +18,10 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TimeZone;
@@ -93,6 +95,9 @@ public class DumpBookFromRegions {
   // Location where region snapshots are stored in the format regions/<regionID>/region_<snapTime>_<date>.gz
   public static final String PROP_REGION_DIR = "enterprises.orbital.evekit.marketdata-scheduler.regionDir";
   public static final String DEF_REGION_DIR  = "";
+  // Number of books to generate in parallel on each thread
+  public static final String PROP_BOOKS_IN_PARALLEL = "enterprises.orbital.evekit.marketdata-scheduler.booksInParallel";
+  public static final int DEF_BOOKS_IN_PARALLEL  = 10;
 
   protected static Comparator<Order> bidComparator = new Comparator<Order>() {
 
@@ -135,15 +140,15 @@ public class DumpBookFromRegions {
   }
 
   protected static class DumpRequest {
-    public int    typeID;
+    public int[]    typeSet;
     public Date   day;
     public File   outputDir;
     public String prefix;
     public long   intervals;
 
-    public DumpRequest(int typeID, Date day, File outputDir, String prefix, long intervals) {
+    public DumpRequest(int[] typeSet, Date day, File outputDir, String prefix, long intervals) {
       super();
-      this.typeID = typeID;
+      this.typeSet = typeSet;
       this.day = day;
       this.outputDir = outputDir;
       this.prefix = prefix;
@@ -163,10 +168,10 @@ public class DumpBookFromRegions {
       SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
       String printDay = formatter.format(next.day);
       try {
-        dumpRegionsDay(next.typeID, next.day, next.outputDir, next.prefix, next.intervals);
-        System.out.println(String.format("Generated (%d, %s)", next.typeID, printDay));
+        dumpRegionsDay(next.typeSet, next.day, next.outputDir, next.prefix, next.intervals);
+        System.out.println(String.format("Generated ({%s}, %s)", Arrays.toString(next.typeSet), printDay));
       } catch (Exception e) {
-        System.err.println(String.format("Failed generation of (%d, %s): %s", next.typeID, printDay, e.toString()));
+        System.err.println(String.format("Failed generation of ({%s}, %s): %s", Arrays.toString(next.typeSet), printDay, e.toString()));
         e.printStackTrace(System.err);
         System.exit(1);
       }
@@ -185,7 +190,7 @@ public class DumpBookFromRegions {
   }
 
   protected static void usage() {
-    System.err.println("Usage: DumpBookFromRegions [-h] [-d <dir>] [-i intervalSizeInMin] [-w YYYY-MM-DD] [-p prefix] [-t threads] [-m typeid]");
+    System.err.println("Usage: DumpBookFromRegions [-h] [-d <dir>] [-i intervalSizeInMin] [-w YYYY-MM-DD] [-p prefix] [-t booksPerCycle] [-m typeid]");
     System.exit(0);
   }
 
@@ -263,7 +268,7 @@ public class DumpBookFromRegions {
    * @param threads
    *          the number of threads to use for writing output
    * @param typeID
-   *          if not empty, then only dump interval files for the types contained in this set.
+   *          the set of types do dump
    * @throws IOException
    *           on SQL or IO error
    * @throws InterruptedException
@@ -280,8 +285,12 @@ public class DumpBookFromRegions {
     if (typeID.isEmpty()) typeID.addAll(typeSet);
     ForkJoinPool executor = new ForkJoinPool(threads);
     System.out.println(String.format("Dumping books for %d types", typeID.size()));
-    for (int nextType : typeID) {
-      executor.submit(new DumpRequestHandler(new DumpRequest(nextType, day, outputDir, prefix, interval)));
+    int p = (int) OrbitalProperties.getLongGlobalProperty(PROP_BOOKS_IN_PARALLEL, DEF_BOOKS_IN_PARALLEL);
+    Integer[] flattened = typeID.toArray(new Integer[typeID.size()]);
+    for (int i = 0; i < flattened.length; i += p) {
+      int[] nextSet = new int[Math.min(p, flattened.length - i)];
+      for (int j = 0; j < nextSet.length; j++) nextSet[j] = flattened[i + j];
+      executor.submit(new DumpRequestHandler(new DumpRequest(nextSet, day, outputDir, prefix, interval)));
     }
     // Wait until all tasks are complete
     executor.shutdown();
@@ -291,8 +300,8 @@ public class DumpBookFromRegions {
   /**
    * Convenience version of dumpRegionsDay.
    * 
-   * @param typeID
-   *          type to dump
+   * @param typeSet
+   *          Array of types to dump in parallel
    * @param day
    *          text string (format: YYYY-MM-DD) giving day to dump (see notes).
    * @param outputDir
@@ -307,7 +316,7 @@ public class DumpBookFromRegions {
    *           on error writing book file
    */
   public static void dumpRegionsDay(
-                                    int typeID,
+                                    int[] typeSet,
                                     String day,
                                     File outputDir,
                                     String prefix,
@@ -315,15 +324,15 @@ public class DumpBookFromRegions {
     throws ParseException, IOException {
     SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
     formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-    dumpRegionsDay(typeID, formatter.parse(day), outputDir, prefix, intervals);
+    dumpRegionsDay(typeSet, formatter.parse(day), outputDir, prefix, intervals);
   }
 
   /**
    * Dump the book for the given region and type on the given day. The output is written to a file with name:
    * &lt;outputDir&gt;/&lt;prefix&gt;_&lt;typeID&gt;_&lt;YYYYMMDD&gt;_&lt;interval&gt;.book.  The provided date is interpreted as UTC, any time value is ignored.
    * 
-   * @param typeID
-   *          type to dump
+   * @param typeSet
+   *          Array of types to dump in parallel.  This is usually more efficient if memory is available as it avoids having to rescan region files multiple times.
    * @param day
    *          day to dump (see notes above)
    * @param outputDir
@@ -336,12 +345,15 @@ public class DumpBookFromRegions {
    *           if error occurs writing book file
    */
   public static void dumpRegionsDay(
-                                    int typeID,
+                                    int[] typeSet,
                                     Date day,
                                     File outputDir,
                                     String prefix,
                                     long intervals)
     throws IOException {
+    // Populate set for faster membership checks below
+    Set<Integer> typeFilter = new HashSet<Integer>();
+    for (int i = 0; i < typeSet.length; i++) typeFilter.add(typeSet[i]);
     // Sanity check intervals
     intervals = Math.min(intervals, TimeUnit.MINUTES.convert(24, TimeUnit.HOURS));
     intervals = Math.max(intervals, 5);
@@ -350,20 +362,27 @@ public class DumpBookFromRegions {
     long startTime = (day.getTime() / millisPerDay) * millisPerDay;
     long start = startTime;
     long end = start + TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
-    // Prepare output file
+    // Prepare output files
     SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
     formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
     final String targetDate = formatter.format(new Date(startTime));
-    String fileName = String.format("%s_%d_%s_%d.book.gz", prefix, typeID, targetDate, intervals);
-    File targetFile = new File(outputDir, fileName);
-    targetFile.getParentFile().mkdirs();
-    PrintWriter bookFile = new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(targetFile))));
+    String[] fileName = new String[typeSet.length];
+    File[] targetFile = new File[typeSet.length];
+    PrintWriter[] bookFile = new PrintWriter[typeSet.length];
+    for (int i = 0; i < typeSet.length; i++) {
+      fileName[i] = String.format("%s_%d_%s_%d.book.gz", prefix, typeSet[i], targetDate, intervals);
+      targetFile[i] = new File(outputDir, fileName[i]);
+      targetFile[i].getParentFile().mkdirs();
+      bookFile[i] = new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(targetFile[i]))));
+    }
     // Move intervals to milliseconds
     intervals = TimeUnit.MILLISECONDS.convert(intervals, TimeUnit.MINUTES);
     try {
       // Write header
       int totalIntervalCount = (int) (TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS) / intervals);
-      bookFile.format("%d\n%d\n", typeID, totalIntervalCount);
+      for (int i = 0; i < typeSet.length; i++) {
+        bookFile[i].format("%d\n%d\n", typeSet[i], totalIntervalCount);
+      }
       // Iterate over all regions - some regions may be empty
       String regionDir = OrbitalProperties.getGlobalProperty(PROP_REGION_DIR, DEF_REGION_DIR) + File.separator + "regions";
       for (int regionID : regionSet) {
@@ -414,18 +433,23 @@ public class DumpBookFromRegions {
         });
         if (lastDayFiles.length > 0) regionFiles.add(lastDayFiles[lastDayFiles.length -1]);
         // 3. Read each available region file and build the book for the given type at the given time.
-        SortedMap<Long, InstrumentBook> booksForDay = new TreeMap<>();
+        Map<Integer, List<Order>> orderList = new HashMap<Integer, List<Order>>();
+        Map<Integer, SortedMap<Long, InstrumentBook>> booksForDay = new HashMap<Integer, SortedMap<Long, InstrumentBook>>();
+        for (int i = 0; i < typeSet.length; i++) {
+          orderList.put(typeSet[i], new ArrayList<Order>());
+          booksForDay.put(typeSet[i], new TreeMap<Long, InstrumentBook>());
+        }
         for (File next : regionFiles) {
           try (LineNumberReader reader = new LineNumberReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(next))))) {
             long snapTime = Long.valueOf((next.getName().split("_"))[1]);
             int orderCount = Integer.valueOf(reader.readLine());
-            List<Order> snapOrders = new ArrayList<>();
             for (int i = 0; i < orderCount; i++) {
               String nextOrderLine = reader.readLine();
               String[] values = nextOrderLine.split(",");
               assert Integer.valueOf(values[0]).intValue() == regionID;
+              int       typeID = Integer.valueOf(values[1]);
               // Filter if this order is for a different type
-              if (Integer.valueOf(values[1]) != typeID) continue;
+              if (!typeFilter.contains(typeID)) continue;
               long       orderID = Long.valueOf(values[2]);
               boolean    buy = Boolean.valueOf(values[3]);
               long       issued = Long.valueOf(values[4]);
@@ -437,38 +461,47 @@ public class DumpBookFromRegions {
               long       locationID = Long.valueOf(values[10]);
               int        duration = Integer.valueOf(values[11]);
               // Save order
-              snapOrders.add(new Order(regionID, typeID, orderID, buy, issued, price, volumeEntered, minVolume, volume, orderRange,
+              orderList.get(typeID).add(new Order(regionID, typeID, orderID, buy, issued, price, volumeEntered, minVolume, volume, orderRange,
                locationID, duration));
             }
-            if (!snapOrders.isEmpty()) {
+            for (int i = 0; i < typeSet.length; i++) {
+              int typeID = typeSet[i];
+            if (!orderList.get(typeID).isEmpty()) {
               // We have orders, save this book.
               InstrumentBook newBook = new InstrumentBook(typeID, snapTime);
-              for (Order nextOrder : snapOrders) {
+              for (Order nextOrder : orderList.get(typeID)) {
                 if (nextOrder.isBuy())
                   newBook.bid.add(nextOrder);
                 else
                   newBook.ask.add(nextOrder);
               }
-              booksForDay.put(snapTime, newBook);
+              booksForDay.get(typeID).put(snapTime, newBook);
             }
+            }
+          } finally {
+            // Clear order list in prep for next region
+            for (int i = 0; i < typeSet.length; i++) orderList.get(typeSet[i]).clear();
           }
         }
         // 4. Iterate through the intervals for the day and output the book that was current as of the interval time
-        bookFile.format("%d\n", regionID);
+        for (int i =0 ; i < typeSet.length; i++) {
+          int typeID = typeSet[i];
+          bookFile[i].format("%d\n", regionID);
           for (start = startTime; start < end; start += intervals) {
             // Dump current book at this time
             try {
-              dumpBookAtTime(start, bookFile, booksForDay);
+              dumpBookAtTime(start, bookFile[i], booksForDay.get(typeID));
             } catch (IOException e) {
               String errMsg = String.format("Failed to write (%d, %d) at %d, skipping this interval (exception follows)", regionID, typeID, start);
               System.err.println(errMsg);
               e.printStackTrace(System.err);
             }
           }
+        }
         // 5. Done with this region 
       }
     } finally {
-      bookFile.close();
+      for (int i = 0; i < typeSet.length; i++) bookFile[i].close();
     }
   }
 
