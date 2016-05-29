@@ -44,7 +44,7 @@ import enterprises.orbital.base.OrbitalProperties;
  */
 public class DumpHistoryDay {
   // Location where history snapshots are stored in the format history/<typeid>/history_<regionid>_<day>.zip
-  public static final String PROP_HISTORY_DIR = "enterprises.orbital.evekit.marketdata.historyDir";
+  public static final String PROP_HISTORY_DIR = "enterprises.orbital.evekit.marketdata-scheduler.historyDir";
   public static final String DEF_HISTORY_DIR  = "";
 
   protected static class DumpRequest {

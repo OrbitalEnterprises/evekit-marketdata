@@ -24,6 +24,7 @@
     <enterprises.orbital.evekit.marketdata-scheduler.appname>evekit-marketdata-scheduler</enterprises.orbital.evekit.marketdata-scheduler.appname>
     <enterprises.orbital.evekit.marketdata.db.driver>com.mysql.jdbc.Driver</enterprises.orbital.evekit.marketdata.db.driver>
     <enterprises.orbital.evekit.marketdata.db.dialect>org.hibernate.dialect.MySQLDialect</enterprises.orbital.evekit.marketdata.db.dialect>
+    <enterprises.orbital.evekit.marketdata-scheduler.procQueueSize>10</enterprises.orbital.evekit.marketdata-scheduler.procQueueSize>
     <enterprises.orbital.evekit.marketdata.populator.historyThreads>10</enterprises.orbital.evekit.marketdata.populator.historyThreads>
     <enterprises.orbital.evekit.marketdata.populator.regionThreads>4</enterprises.orbital.evekit.marketdata.populator.regionThreads>
     <prometheus.client.version>0.0.14</prometheus.client.version>
