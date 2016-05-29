@@ -744,8 +744,17 @@ public class StandaloneScheduler {
 
         @Override
         public JsonObject call() throws Exception {
-          CRESTClient client = new CRESTClient(next);
-          return client.getData();
+          IOException last = null;
+          for (int tries = 0; tries < 3; tries++) {
+            try {
+              CRESTClient client = new CRESTClient(next);
+              return client.getData();
+            } catch(IOException e) {
+              last = e;
+            }
+          }
+          assert last != null;
+          throw last;
         }
 
       });
