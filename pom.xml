@@ -27,6 +27,7 @@
     <enterprises.orbital.evekit.marketdata-scheduler.procQueueSize>10</enterprises.orbital.evekit.marketdata-scheduler.procQueueSize>
     <enterprises.orbital.evekit.marketdata.populator.historyThreads>10</enterprises.orbital.evekit.marketdata.populator.historyThreads>
     <enterprises.orbital.evekit.marketdata.populator.regionThreads>4</enterprises.orbital.evekit.marketdata.populator.regionThreads>
+    <enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval>300000</enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval>
     <prometheus.client.version>0.0.14</prometheus.client.version>
   </properties>
   
