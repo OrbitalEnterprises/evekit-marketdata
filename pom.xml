@@ -8,7 +8,7 @@
   <groupId>enterprises.orbital.evekit</groupId>
   <artifactId>marketdata.scheduler</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <packaging>war</packaging>
+  <packaging>jar</packaging>
   <name>EveKit Market Data Scheduler</name>
   <description>Dispatches instruments ready to have their marketdata updated</description>
 
@@ -24,6 +24,8 @@
     <enterprises.orbital.evekit.marketdata-scheduler.appname>evekit-marketdata-scheduler</enterprises.orbital.evekit.marketdata-scheduler.appname>
     <enterprises.orbital.evekit.marketdata.db.driver>com.mysql.jdbc.Driver</enterprises.orbital.evekit.marketdata.db.driver>
     <enterprises.orbital.evekit.marketdata.db.dialect>org.hibernate.dialect.MySQLDialect</enterprises.orbital.evekit.marketdata.db.dialect>
+    <enterprises.orbital.evekit.marketdata.populator.historyThreads>10</enterprises.orbital.evekit.marketdata.populator.historyThreads>
+    <enterprises.orbital.evekit.marketdata.populator.regionThreads>4</enterprises.orbital.evekit.marketdata.populator.regionThreads>
     <prometheus.client.version>0.0.14</prometheus.client.version>
   </properties>
   
@@ -35,77 +37,54 @@
         <filtering>true</filtering>
       </resource>
     </resources>
-    <plugins>
-      <!-- Make sure we sub in our web configuration -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-war-plugin</artifactId>
-        <version>2.6</version>
-        <configuration>
-          <webResources>
-            <resource>
-              <filtering>true</filtering>
-              <directory>src/main/webapp</directory>
-              <includes>
-                <include>**/web.xml</include>
-              </includes>
-            </resource>
-          </webResources>
-          <warSourceDirectory>src/main/webapp</warSourceDirectory>
-          <webXml>src/main/webapp/WEB-INF/web.xml</webXml>
-        </configuration>
-      </plugin>
-      <!-- This allows you to deploy to a Tomcat server -->
-      <!-- Use a profile to create appropriate settings (see README.md) -->  
-      <plugin>
-        <groupId>org.apache.tomcat.maven</groupId>
-        <artifactId>tomcat7-maven-plugin</artifactId>
-        <version>2.2</version>
-        <configuration>
-          <url>${enterprises.orbital.evekit.marketdata-scheduler.tomcat.url}</url>
-          <server>${enterprises.orbital.evekit.marketdata-scheduler.tomcat.server}</server>
-          <path>${enterprises.orbital.evekit.marketdata-scheduler.tomcat.path}</path>
-        </configuration>
-      </plugin>
-    </plugins>
   </build>
 
   <dependencies>
     <dependency>
-      <groupId>enterprises.orbital.evekit</groupId>
-      <artifactId>marketdata</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
+      <groupId>enterprises.orbital</groupId>
+      <artifactId>db-manager</artifactId>
+      <version>1.0.2</version>
     </dependency>
     <dependency>
-      <groupId>javax.servlet</groupId>
-      <artifactId>javax.servlet-api</artifactId>
-      <version>3.1.0</version>
+      <groupId>javax.json</groupId>
+      <artifactId>javax.json-api</artifactId>
+      <version>1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.glassfish</groupId>
+      <artifactId>javax.json</artifactId>
+      <version>1.0.4</version>
     </dependency>    
-    <dependency>
-      <groupId>io.swagger</groupId>
-      <artifactId>swagger-annotations</artifactId>
-      <version>1.5.7</version>
-    </dependency> 
-    <dependency>
-      <groupId>io.swagger</groupId>
-      <artifactId>swagger-jersey2-jaxrs</artifactId>
-      <version>1.5.7</version>
-    </dependency>
-    <dependency>
-      <groupId>org.glassfish.jersey.containers</groupId>
-      <artifactId>jersey-container-servlet</artifactId>
-      <version>2.1</version>
-    </dependency>
+<!--     <dependency> -->
+<!--       <groupId>javax.servlet</groupId> -->
+<!--       <artifactId>javax.servlet-api</artifactId> -->
+<!--       <version>3.1.0</version> -->
+<!--     </dependency>     -->
+<!--     <dependency> -->
+<!--       <groupId>io.swagger</groupId> -->
+<!--       <artifactId>swagger-annotations</artifactId> -->
+<!--       <version>1.5.7</version> -->
+<!--     </dependency>  -->
+<!--     <dependency> -->
+<!--       <groupId>io.swagger</groupId> -->
+<!--       <artifactId>swagger-jersey2-jaxrs</artifactId> -->
+<!--       <version>1.5.7</version> -->
+<!--     </dependency> -->
+<!--     <dependency> -->
+<!--       <groupId>org.glassfish.jersey.containers</groupId> -->
+<!--       <artifactId>jersey-container-servlet</artifactId> -->
+<!--       <version>2.1</version> -->
+<!--     </dependency> -->
     <dependency>
       <groupId>mysql</groupId>
       <artifactId>mysql-connector-java</artifactId>
       <version>5.1.38</version>
     </dependency>
     <dependency>
-			<groupId>org.hibernate</groupId>
-			<artifactId>hibernate-c3p0</artifactId>
-			<version>5.0.6.Final</version>
-		</dependency>    
+      <groupId>org.hibernate</groupId>
+      <artifactId>hibernate-c3p0</artifactId>
+      <version>5.0.6.Final</version>
+    </dependency>    
     <dependency>
       <groupId>log4j</groupId>
       <artifactId>log4j</artifactId>
@@ -135,6 +114,12 @@
       <artifactId>simpleclient_pushgateway</artifactId>
       <version>${prometheus.client.version}</version>
     </dependency>    
+    <!-- Jetty to host prometheus servlet -->   
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-servlet</artifactId>
+      <version>8.1.18.v20150929</version>
+    </dependency>
   </dependencies>
 
 </project>
