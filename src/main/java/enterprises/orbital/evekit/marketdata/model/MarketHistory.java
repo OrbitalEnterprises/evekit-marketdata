@@ -1,4 +1,4 @@
-package enterprises.orbital.evekit.marketdata;
+package enterprises.orbital.evekit.marketdata.model;
 
 import java.math.BigDecimal;
 

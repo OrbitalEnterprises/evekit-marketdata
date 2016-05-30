@@ -1,4 +1,4 @@
-package enterprises.orbital.evekit.marketdata;
+package enterprises.orbital.evekit.marketdata.downloader;
 
 import java.io.IOException;
 import java.io.InputStreamReader;

@@ -11,8 +11,8 @@
         </description>
         
         <class>enterprises.orbital.db.DBProperty</class>
-        <class>enterprises.orbital.evekit.marketdata.Instrument</class>
-        <class>enterprises.orbital.evekit.marketdata.Region</class>
+        <class>enterprises.orbital.evekit.marketdata.model.Instrument</class>
+        <class>enterprises.orbital.evekit.marketdata.model.Region</class>
 
         <properties>
             <property name="javax.persistence.jdbc.driver" value="${enterprises.orbital.evekit.marketdata.db.driver}"/>
@@ -23,7 +23,6 @@
             <property name="hibernate.show_sql" value="false" />
             <property name="hibernate.format_sql" value="false" />
             <property name="hibernate.connection.isolation" value="4" />
-<!--             <property name="hibernate.hbm2ddl.auto" value="update"/> -->
             
             <property name="hibernate.c3p0.min_size" value="5"/>
             <property name="hibernate.c3p0.max_size" value="20"/>
