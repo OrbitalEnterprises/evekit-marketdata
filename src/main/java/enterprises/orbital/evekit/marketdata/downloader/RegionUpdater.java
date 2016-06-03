@@ -34,6 +34,13 @@ import enterprises.orbital.evekit.marketdata.model.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.model.Order;
 import enterprises.orbital.evekit.marketdata.model.Region;
 
+/**
+ * Download and store region updates. Regions are filtered by a type set to avoid saving order information for types we've elected to omit. The file format is
+ * UTF-8 with the first line being a count of the total number of orders stored. The remaining lines are the orders retrieved, one order per line.
+ * 
+ * One region file is created per region during each snapshot interval. At (currently) 100 regions, and 5 minute intervals (currently the shortest sensible
+ * interval given cache times), each day will accumulate 28800 region files.
+ */
 public class RegionUpdater implements Runnable {
   private static final Logger log = Logger.getLogger(RegionUpdater.class.getName());
 
@@ -50,7 +57,10 @@ public class RegionUpdater implements Runnable {
         // Spin forever updating regions
         while (true) {
           // Attempt to retrieve region to update, otherwise loop and sleep
-          Region region = Region.takeNextScheduled(interval);
+          Region region = null;
+          synchronized (Region.class) {
+            region = Region.takeNextScheduled(interval);
+          }
           if (region == null) {
             log.info("No region available for update, waiting");
             Thread.sleep(TimeUnit.MILLISECONDS.convert(30, TimeUnit.SECONDS));
@@ -72,22 +82,24 @@ public class RegionUpdater implements Runnable {
           }
           // Release region
           final long at = OrbitalProperties.getCurrentTime();
-          try {
-            long updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
-              @Override
-              public Long run() throws Exception {
-                // Update complete - release this region
-                Region update = Region.get(regionID);
-                long last = update.getLastUpdate();
-                update.setLastUpdate(at);
-                update.setScheduled(false);
-                Region.update(update);
-                return at - last;
-              }
-            });
-            MarketDownloader.all_region_update_samples.observe(updateDelay / 1000);
-          } catch (Exception e) {
-            log.log(Level.SEVERE, "DB error releasing region, failing: (" + regionID + ")", e);
+          synchronized (Region.class) {
+            try {
+              long updateDelay = EveKitMarketDataProvider.getFactory().runTransaction(new RunInTransaction<Long>() {
+                @Override
+                public Long run() throws Exception {
+                  // Update complete - release this region
+                  Region update = Region.get(regionID);
+                  long last = update.getLastUpdate();
+                  update.setLastUpdate(at);
+                  update.setScheduled(false);
+                  Region.update(update);
+                  return at - last;
+                }
+              });
+              MarketDownloader.all_region_update_samples.observe(updateDelay / 1000);
+            } catch (Exception e) {
+              log.log(Level.SEVERE, "DB error releasing region, failing: (" + regionID + ")", e);
+            }
           }
           // Record update time
           long endPopTime = OrbitalProperties.getCurrentTime();

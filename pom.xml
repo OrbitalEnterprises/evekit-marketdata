@@ -6,29 +6,54 @@
     <version>1.0.0</version>
   </parent>
   <groupId>enterprises.orbital.evekit</groupId>
-  <artifactId>marketdata.scheduler</artifactId>
+  <artifactId>marketdata</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <packaging>jar</packaging>
-  <name>EveKit Market Data Scheduler</name>
-  <description>Dispatches instruments ready to have their marketdata updated</description>
+  <name>EveKit Market Data Scraper</name>
+  <description>Downloads EVE Online market data book view and history.  Provides tools to convert raw downloads into files fit for market data analysis.</description>
 
-  <url>https://github.com/OrbitalEnterprises/evekit-marketdata-scheduler</url>
+  <url>https://github.com/OrbitalEnterprises/evekit-marketdata</url>
   <scm>
-  	<url>https://github.com/OrbitalEnterprises/evekit-marketdata-scheduler</url>
-  	<connection>scm:git:https://github.com/OrbitalEnterprises/evekit-marketdata-scheduler.git</connection>
+  	<url>https://github.com/OrbitalEnterprises/evekit-marketdata</url>
+  	<connection>scm:git:https://github.com/OrbitalEnterprises/evekit-marketdata.git</connection>
   	<tag>master</tag>
-  	<developerConnection>scm:git:git@github.com:OrbitalEnterprises/evekit-marketdata-scheduler.git</developerConnection>
+  	<developerConnection>scm:git:git@github.com:OrbitalEnterprises/evekit-marketdata.git</developerConnection>
   </scm>
   
   <properties>
-    <enterprises.orbital.evekit.marketdata-scheduler.appname>evekit-marketdata-scheduler</enterprises.orbital.evekit.marketdata-scheduler.appname>
+    <!-- Database settings -->
+    <enterprises.orbital.evekit.marketdata.persistence_unit>evekit-marketdata</enterprises.orbital.evekit.marketdata.persistence_unit>
+    <!-- CREST settings -->
+    <enterprises.orbital.evekit.marketdata.crest.root>https://crest.eveonline.com/</enterprises.orbital.evekit.marketdata.crest.root>
+    <enterprises.orbital.evekit.marketdata.crest.agent>YourApp/1.0 (https://yourpage; you@somewhere; )</enterprises.orbital.evekit.marketdata.crest.agent>
+    <!-- Downloader settings -->
+    <enterprises.orbital.evekit.marketdata.historyDir>.</enterprises.orbital.evekit.marketdata.historyDir>
+    <enterprises.orbital.evekit.marketdata.regionDir>.</enterprises.orbital.evekit.marketdata.regionDir>
+    <enterprises.orbital.evekit.marketdata.historyThreads>10</enterprises.orbital.evekit.marketdata.historyThreads>
+    <enterprises.orbital.evekit.marketdata.regionThreads>4</enterprises.orbital.evekit.marketdata.regionThreads>
+	<enterprises.orbital.evekit.marketdata.refUpdateInt>86400000</enterprises.orbital.evekit.marketdata.refUpdateInt>
+	<enterprises.orbital.evekit.marketdata.instStuckInt>600000</enterprises.orbital.evekit.marketdata.instStuckInt>
+	<enterprises.orbital.evekit.marketdata.regionStuckInt>600000</enterprises.orbital.evekit.marketdata.regionStuckInt>
+	<enterprises.orbital.evekit.marketdata.minRegionSchedInterval>300000</enterprises.orbital.evekit.marketdata.minRegionSchedInterval>
+	<enterprises.orbital.evekit.marketdata.minHistorySchedInterval>72000000</enterprises.orbital.evekit.marketdata.minHistorySchedInterval>
+	<enterprises.orbital.evekit.marketdata.maxURLPool>20</enterprises.orbital.evekit.marketdata.maxURLPool>
+    <!-- Generator settings -->
+    <enterprises.orbital.evekit.marketdata.booksInParallel>10</enterprises.orbital.evekit.marketdata.booksInParallel>
+    <!-- Persistent settings - substitute in persistence.xml -->
     <enterprises.orbital.evekit.marketdata.db.driver>com.mysql.jdbc.Driver</enterprises.orbital.evekit.marketdata.db.driver>
     <enterprises.orbital.evekit.marketdata.db.dialect>org.hibernate.dialect.MySQLDialect</enterprises.orbital.evekit.marketdata.db.dialect>
-    <enterprises.orbital.evekit.marketdata-scheduler.procQueueSize>10</enterprises.orbital.evekit.marketdata-scheduler.procQueueSize>
-    <enterprises.orbital.evekit.marketdata.populator.historyThreads>10</enterprises.orbital.evekit.marketdata.populator.historyThreads>
-    <enterprises.orbital.evekit.marketdata.populator.regionThreads>4</enterprises.orbital.evekit.marketdata.populator.regionThreads>
-    <enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval>300000</enterprises.orbital.evekit.marketdata.scheduler.minSchedInterval>
+    <enterprises.orbital.evekit.marketdata.db.url>jdbc:mysql://localhost:3306/marketdata</enterprises.orbital.evekit.marketdata.db.url>
+    <enterprises.orbital.evekit.marketdata.db.user>dbuser</enterprises.orbital.evekit.marketdata.db.user>
+    <enterprises.orbital.evekit.marketdata.db.password>dbpass</enterprises.orbital.evekit.marketdata.db.password>
+    <!-- Versions -->
+    <hibernate.version>5.0.6.Final</hibernate.version>
     <prometheus.client.version>0.0.14</prometheus.client.version>
+    <jetty.version>8.1.18.v20150929</jetty.version>
+    <log4j.version>1.2.17</log4j.version>
+    <mysql.connector.version>5.1.38</mysql.connector.version>
+    <glassfish.json.version>1.0.4</glassfish.json.version>
+    <javax.json.version>1.0</javax.json.version>
+    <orbital.toolchain.version>1.0.2</orbital.toolchain.version>
   </properties>
   
   <build>
@@ -45,52 +70,32 @@
     <dependency>
       <groupId>enterprises.orbital</groupId>
       <artifactId>db-manager</artifactId>
-      <version>1.0.2</version>
+      <version>${orbital.toolchain.version}</version>
     </dependency>
     <dependency>
       <groupId>javax.json</groupId>
       <artifactId>javax.json-api</artifactId>
-      <version>1.0</version>
+      <version>${javax.json.version}</version>
     </dependency>
     <dependency>
       <groupId>org.glassfish</groupId>
       <artifactId>javax.json</artifactId>
-      <version>1.0.4</version>
-    </dependency>    
-<!--     <dependency> -->
-<!--       <groupId>javax.servlet</groupId> -->
-<!--       <artifactId>javax.servlet-api</artifactId> -->
-<!--       <version>3.1.0</version> -->
-<!--     </dependency>     -->
-<!--     <dependency> -->
-<!--       <groupId>io.swagger</groupId> -->
-<!--       <artifactId>swagger-annotations</artifactId> -->
-<!--       <version>1.5.7</version> -->
-<!--     </dependency>  -->
-<!--     <dependency> -->
-<!--       <groupId>io.swagger</groupId> -->
-<!--       <artifactId>swagger-jersey2-jaxrs</artifactId> -->
-<!--       <version>1.5.7</version> -->
-<!--     </dependency> -->
-<!--     <dependency> -->
-<!--       <groupId>org.glassfish.jersey.containers</groupId> -->
-<!--       <artifactId>jersey-container-servlet</artifactId> -->
-<!--       <version>2.1</version> -->
-<!--     </dependency> -->
+      <version>${glassfish.json.version}</version>
+    </dependency>
     <dependency>
       <groupId>mysql</groupId>
       <artifactId>mysql-connector-java</artifactId>
-      <version>5.1.38</version>
+      <version>${mysql.connector.version}</version>
     </dependency>
     <dependency>
       <groupId>org.hibernate</groupId>
       <artifactId>hibernate-c3p0</artifactId>
-      <version>5.0.6.Final</version>
+      <version>${hibernate.version}</version>
     </dependency>    
     <dependency>
       <groupId>log4j</groupId>
       <artifactId>log4j</artifactId>
-      <version>1.2.17</version>
+      <version>${log4j.version}</version>
     </dependency>
     <!-- The client -->
     <dependency>
@@ -120,7 +125,7 @@
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-servlet</artifactId>
-      <version>8.1.18.v20150929</version>
+      <version>${jetty.version}</version>
     </dependency>
   </dependencies>
 

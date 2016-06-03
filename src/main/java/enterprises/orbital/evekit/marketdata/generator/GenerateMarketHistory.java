@@ -1,30 +1,34 @@
-package enterprises.orbital.evekit.marketdata;
+package enterprises.orbital.evekit.marketdata.generator;
 
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.LineNumberReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
-import java.text.ParseException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.TimeZone;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 import enterprises.orbital.base.OrbitalProperties;
+import enterprises.orbital.evekit.marketdata.model.MarketHistory;
 
 /**
- * Convert market history snapshots into market history files. A history file consists of one or more market snapshot histories, one for each region, where each
- * line has the following format:
+ * Convert market history snapshots into market history files. A market history file is a file with name
+ * history_&lt;snapTime&gt;_&lt;region&gt;_&lt;date&gt;.gz. The file consists of a single line giving the number of history entries in the file, followed by one
+ * line for each market history entry. All entries in the file are for the same type and region. Each market history line has format:
  * 
  * <pre>
  * typeID
@@ -37,15 +41,15 @@ import enterprises.orbital.base.OrbitalProperties;
  * date in milliseconds UTC
  * </pre>
  *
- * A market history file, by default, is stored at "year"/"month"/"day"/market_"typeid"_"date".history
+ * A market history file, by default, is stored at "year"/"month"/"day"/market_"typeid"_"date".history.gz
  * 
  * The history dumper works slightly differently than the book dumper. Because several days of history are gathered in a single day's snapshots, the history
  * dumper takes responsibility for creating year/month/day prefixes as needed based on the coverage of the available snapshots.
  */
-public class DumpHistoryDay {
-  // Location where history snapshots are stored in the format history/<typeid>/history_<regionid>_<day>.zip
-  public static final String PROP_HISTORY_DIR = "enterprises.orbital.evekit.marketdata-scheduler.historyDir";
-  public static final String DEF_HISTORY_DIR  = "";
+public class GenerateMarketHistory {
+  // Location where history snapshots are stored in the format history/<typeid>/history_<snapTime>_<regionid>_<day>.gz
+  public static final String PROP_HISTORY_DIR = "enterprises.orbital.evekit.marketdata.historyDir";
+  public static final String DFLT_HISTORY_DIR = "";
 
   protected static class DumpRequest {
     public int    typeID;
@@ -74,6 +78,7 @@ public class DumpHistoryDay {
     @Override
     public void run() {
       SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
+      formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
       String printDay = formatter.format(next.day);
       try {
         dumpHistoryDay(next.typeID, next.day, next.limit, next.outputDir, next.prefix);
@@ -87,14 +92,14 @@ public class DumpHistoryDay {
   }
 
   protected static void usage() {
-    System.err.println("Usage: DumpHistoryDay [-h] [-d <dir>] [-w YYYY-MM-DD] [-p prefix] [-t threads] [-m typeid] [-l YYYY-MM-DD]");
+    System.err.println("Usage: GenerateMarketHistory [-h] [-d <dir>] [-w YYYY-MM-DD] [-p prefix] [-t threads] [-m typeid] [-l YYYY-MM-DD]");
     System.exit(0);
   }
 
   public static void main(
                           String[] argv)
     throws Exception {
-    OrbitalProperties.addPropertyFile("EveKitMarketdataScheduler.properties");
+    OrbitalProperties.addPropertyFile("EveKitMarketdata.properties");
     Date defaultDate = Calendar.getInstance(TimeZone.getTimeZone("UTC")).getTime();
     Date limitDate = new Date(Calendar.getInstance(TimeZone.getTimeZone("UTC")).getTime().getTime() - TimeUnit.MILLISECONDS.convert(700, TimeUnit.DAYS));
     String defaultDirectory = ".";
@@ -138,19 +143,6 @@ public class DumpHistoryDay {
     dumpHistory(defaultDate, limitDate, new File(defaultDirectory), defaultPrefix, defaultThreads, typeList);
   }
 
-  public static void dumpHistory(
-                                 String day,
-                                 String limitDay,
-                                 File outputDir,
-                                 String prefix,
-                                 int threads,
-                                 List<Integer> typeList)
-    throws IOException, ExecutionException, ParseException, InterruptedException {
-    SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
-    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-    dumpHistory(formatter.parse(day), formatter.parse(limitDay), outputDir, prefix, threads, typeList);
-  }
-
   /**
    * Dump all market history snapshots recorded for the given day.
    * 
@@ -181,7 +173,7 @@ public class DumpHistoryDay {
     throws IOException, InterruptedException {
     if (typeList.isEmpty()) {
       // Retrieve and add all available types
-      File historyDir = new File(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR) + File.separator + "history");
+      File historyDir = new File(OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DFLT_HISTORY_DIR) + File.separator + "history");
       for (String fn : historyDir.list()) {
         try {
           int nextTypeID = Integer.valueOf(fn);
@@ -202,36 +194,6 @@ public class DumpHistoryDay {
   }
 
   /**
-   * Convenience version of dumpHistoryDay. @see DumpHistoryDay#dumpHistoryDay(int, int, Date, File, String)
-   * 
-   * @param typeID
-   *          type to dump
-   * @param day
-   *          text string (format: YYYY-MM-DD) giving day to dump.
-   * @param limit
-   *          text string (format: YYYY-MM-DD) giving the day before which market history will not be dumped.
-   * @param outputDir
-   *          output directory where history file will be written
-   * @param prefix
-   *          prefix for output file name
-   * @throws ParseException
-   *           if date not parseable
-   * @throws IOException
-   *           on error writing book file
-   */
-  public static void dumpHistoryDay(
-                                    int typeID,
-                                    String day,
-                                    String limit,
-                                    File outputDir,
-                                    String prefix)
-    throws ParseException, IOException {
-    SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
-    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-    dumpHistoryDay(typeID, formatter.parse(day), formatter.parse(limit), outputDir, prefix);
-  }
-
-  /**
    * Dump the history for the given type from all snapshots recorded on the given day. The provided date is interpreted as UTC, any time value is ignored.
    * 
    * @param typeID
@@ -247,12 +209,12 @@ public class DumpHistoryDay {
    * @throws IOException
    *           if error occurs writing history file
    */
-  public static void dumpHistoryDay(
-                                    int typeID,
-                                    Date day,
-                                    Date limit,
-                                    File outputDir,
-                                    String prefix)
+  protected static void dumpHistoryDay(
+                                       int typeID,
+                                       Date day,
+                                       Date limit,
+                                       File outputDir,
+                                       String prefix)
     throws IOException {
     // Determine history output time (00:00 UTC)
     final long millisPerDay = TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
@@ -261,7 +223,7 @@ public class DumpHistoryDay {
     formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
     final String snapDate = formatter.format(new Date(snapTime));
     // Iterate over available regions for this type
-    String historyDir = OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DEF_HISTORY_DIR) + File.separator + "history" + File.separator
+    String historyDir = OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DFLT_HISTORY_DIR) + File.separator + "history" + File.separator
         + String.valueOf(typeID);
     File historyDirFile = new File(historyDir);
     for (File nextRegion : historyDirFile.listFiles(new FilenameFilter() {
@@ -270,57 +232,49 @@ public class DumpHistoryDay {
       public boolean accept(
                             File dir,
                             String name) {
-        return name.endsWith("_" + snapDate + ".zip");
+        return name.endsWith("_" + snapDate + ".gz");
       }
     })) {
-      ZipFile regionZip = new ZipFile(nextRegion);
-      String regStr = nextRegion.getName().substring("history_".length());
-      int regionID = Integer.valueOf(regStr.substring(0, regStr.indexOf('_')));
-      try {
-        // Each region file consists of one or more day history snapshots already in the appropriate format. Iterate through these snapshots and append to the
-        // appropriate history file.
-        Enumeration<? extends ZipEntry> entries = regionZip.entries();
-        while (entries.hasMoreElements()) {
-          ZipEntry nextEntry = entries.nextElement();
-          long entryDate = Long.valueOf(nextEntry.getName().substring(String.format("snap_%d_", regionID).length()));
-          if (entryDate <= limit.getTime())
+      String[] fields = nextRegion.getName().split("_");
+      int regionID = Integer.valueOf(fields[2]);
+      try (LineNumberReader reader = new LineNumberReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(nextRegion))))) {
+        // Extract all market history records contained in this file
+        int historyCount = Integer.valueOf(reader.readLine());
+        for (int i = 0; i < historyCount; i++) {
+          String nextLine = reader.readLine();
+          String[] values = nextLine.split(",");
+          int orderCount = Integer.valueOf(values[2]);
+          BigDecimal lowPrice = BigDecimal.valueOf(Double.valueOf(values[3]).doubleValue()).setScale(2, RoundingMode.HALF_UP);
+          BigDecimal highPrice = BigDecimal.valueOf(Double.valueOf(values[4]).doubleValue()).setScale(2, RoundingMode.HALF_UP);
+          BigDecimal avgPrice = BigDecimal.valueOf(Double.valueOf(values[5]).doubleValue()).setScale(2, RoundingMode.HALF_UP);
+          long volume = Long.valueOf(values[6]);
+          long date = Long.valueOf(values[7]);
+          if (date <= limit.getTime())
             // Skip dates before the limit date
             continue;
-          String historyDate = formatter.format(new Date(entryDate));
+          MarketHistory result = new MarketHistory(typeID, regionID, orderCount, lowPrice, highPrice, avgPrice, volume, date);
+          // Prepare to store entry
+          String historyDate = formatter.format(new Date(date));
           String hYear = historyDate.substring(0, 4);
           String hMonth = historyDate.substring(4, 6);
           String hDay = historyDate.substring(6, 8);
-          // Sanity check year and alert on bad year format
-          if ((Integer.valueOf(hYear) < 2015) || (Integer.valueOf(hYear) > 2016)) {
-            System.err.println("Bad entry date parsed from " + nextRegion + " and entry " + nextEntry + ", date parses to " + historyDate + ", skipping");
-            continue;
-          }
           // Create or append to file for this market history day
-          String fileName = String.format("%s_%d_%s.history", prefix, typeID, historyDate);
+          String fileName = String.format("%s_%d_%s.history.gz", prefix, typeID, historyDate);
           File targetFile = new File(new File(new File(new File(outputDir, hYear), hMonth), hDay), fileName);
           targetFile.getParentFile().mkdirs();
-          PrintWriter historyFile = new PrintWriter(new FileWriter(targetFile, true));
-          try {
-            // Copy market snapshot to output file
-            InputStreamReader reader = new InputStreamReader(regionZip.getInputStream(nextEntry));
-            try {
-              char[] buffer = new char[2048];
-              int len;
-              len = reader.read(buffer);
-              while (len != -1) {
-                historyFile.write(buffer, 0, len);
-                len = reader.read(buffer);
-              }
-            } finally {
-              reader.close();
-            }
-          } finally {
-            historyFile.close();
+          try (PrintWriter historyFile = new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(targetFile, true))))) {
+            writeHistory(result, historyFile);
           }
         }
-      } finally {
-        regionZip.close();
       }
     }
   }
+
+  protected static void writeHistory(
+                                     MarketHistory h,
+                                     PrintWriter out) {
+    out.format("%d,%d,%d,%.2f,%.2f,%.2f,%d,%d\n", h.getTypeID(), h.getRegionID(), h.getOrderCount(), h.getLowPrice(), h.getHighPrice(), h.getAvgPrice(),
+               h.getVolume(), h.getDate());
+  }
+
 }
