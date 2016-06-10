@@ -3,7 +3,7 @@
   <parent>
     <groupId>enterprises.orbital</groupId>
     <artifactId>license</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
   </parent>
   <groupId>enterprises.orbital.evekit</groupId>
   <artifactId>marketdata</artifactId>
@@ -31,12 +31,12 @@
     <enterprises.orbital.evekit.marketdata.regionDir>.</enterprises.orbital.evekit.marketdata.regionDir>
     <enterprises.orbital.evekit.marketdata.historyThreads>10</enterprises.orbital.evekit.marketdata.historyThreads>
     <enterprises.orbital.evekit.marketdata.regionThreads>4</enterprises.orbital.evekit.marketdata.regionThreads>
-	<enterprises.orbital.evekit.marketdata.refUpdateInt>86400000</enterprises.orbital.evekit.marketdata.refUpdateInt>
-	<enterprises.orbital.evekit.marketdata.instStuckInt>600000</enterprises.orbital.evekit.marketdata.instStuckInt>
-	<enterprises.orbital.evekit.marketdata.regionStuckInt>600000</enterprises.orbital.evekit.marketdata.regionStuckInt>
-	<enterprises.orbital.evekit.marketdata.minRegionSchedInterval>300000</enterprises.orbital.evekit.marketdata.minRegionSchedInterval>
-	<enterprises.orbital.evekit.marketdata.minHistorySchedInterval>72000000</enterprises.orbital.evekit.marketdata.minHistorySchedInterval>
-	<enterprises.orbital.evekit.marketdata.maxURLPool>20</enterprises.orbital.evekit.marketdata.maxURLPool>
+    <enterprises.orbital.evekit.marketdata.refUpdateInt>86400000</enterprises.orbital.evekit.marketdata.refUpdateInt>
+    <enterprises.orbital.evekit.marketdata.instStuckInt>600000</enterprises.orbital.evekit.marketdata.instStuckInt>
+    <enterprises.orbital.evekit.marketdata.regionStuckInt>600000</enterprises.orbital.evekit.marketdata.regionStuckInt>
+    <enterprises.orbital.evekit.marketdata.minRegionSchedInterval>300000</enterprises.orbital.evekit.marketdata.minRegionSchedInterval>
+    <enterprises.orbital.evekit.marketdata.minHistorySchedInterval>72000000</enterprises.orbital.evekit.marketdata.minHistorySchedInterval>
+    <enterprises.orbital.evekit.marketdata.maxURLPool>20</enterprises.orbital.evekit.marketdata.maxURLPool>
     <!-- Generator settings -->
     <enterprises.orbital.evekit.marketdata.booksInParallel>10</enterprises.orbital.evekit.marketdata.booksInParallel>
     <!-- Persistent settings - substitute in persistence.xml -->
@@ -53,7 +53,7 @@
     <mysql.connector.version>5.1.38</mysql.connector.version>
     <glassfish.json.version>1.0.4</glassfish.json.version>
     <javax.json.version>1.0</javax.json.version>
-    <orbital.toolchain.version>1.0.2</orbital.toolchain.version>
+    <orbital.toolchain.version>2.0.0</orbital.toolchain.version>
   </properties>
   
   <build>
