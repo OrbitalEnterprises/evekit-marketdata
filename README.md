@@ -67,7 +67,9 @@ The book generator consolidates raw order book snapshots for a given date into a
 
 The consolidated output file is named as follows:
 
-```&lt;year&gt;/&lt;month&gt;/&lt;day&gt;/&lt;prefix&gt;_&lt;typeID&gt;_&lt;YYYYMMDD&gt;_&lt;interval_in_minutes&gt;.book.gz```
+```
+<year>/<month>/<day>/<prefix>_<typeID>_<YYYYMMDD>_<interval_in_minutes>.book.gz
+```
 
 The data within the file is organized as follows:
 
@@ -102,7 +104,9 @@ Each order is a comma separated line with the following format:
 
 The market history generator consolidates raw market history snapshots for a given date into a single file per type containing market history data for all regions for the given date.  The consolidated output file is named as follows:
 
-```&lt;year&gt;/&lt;month&gt;/&lt;day&gt;/&lt;prefix&gt;_&lt;typeID&gt;_&lt;YYYYMMDD&gt;.history.gz```
+```
+<year>/<month>/<day>/<prefix>_<typeID>_<YYYYMMDD>.history.gz
+```
 
 Each line in the output file is comma separated with the following fields:
 
@@ -120,32 +124,32 @@ Each line in the output file is comma separated with the following fields:
 After cloning this module, you need to setup a database instance using your favorite JDBC and Hibernate compatible SQL database.  You can create the necessary tables using the following schema:
 
 ```
-CREATE TABLE `ekmd_instrument` (
-   `typeID` int(11) NOT NULL,
-   `active` bit(1) NOT NULL,
-   `lastUpdate` bigint(20) NOT NULL,
-   `scheduleTime` bigint(20) NOT NULL,
-   `scheduled` bit(1) NOT NULL,
-   PRIMARY KEY (`typeID`),
-   KEY `typeIndex` (`typeID`),
-   KEY `activeIndex` (`active`),
-   KEY `lastUpdateIndex` (`lastUpdate`),
-   KEY `scheduledIndex` (`scheduled`),
-   KEY `scheduleTimeIndex` (`scheduleTime`)
+CREATE TABLE ekmd_instrument (
+   typeID int(11) NOT NULL,
+   active bit(1) NOT NULL,
+   lastUpdate bigint(20) NOT NULL,
+   scheduleTime bigint(20) NOT NULL,
+   scheduled bit(1) NOT NULL,
+   PRIMARY KEY (typeID),
+   KEY typeIndex (typeID),
+   KEY activeIndex (active),
+   KEY lastUpdateIndex (lastUpdate),
+   KEY scheduledIndex (scheduled),
+   KEY scheduleTimeIndex (scheduleTime)
  );
 
-CREATE TABLE `ekmd_region` (
-   `regionID` int(11) NOT NULL,
-   `active` bit(1) NOT NULL,
-   `lastUpdate` bigint(20) NOT NULL,
-   `scheduleTime` bigint(20) NOT NULL,
-   `scheduled` bit(1) NOT NULL,
-   PRIMARY KEY (`regionID`),
-   KEY `regionIndex` (`regionID`),
-   KEY `activeIndex` (`active`),
-   KEY `lastUpdateIndex` (`lastUpdate`),
-   KEY `scheduledIndex` (`scheduled`),
-   KEY `scheduleTimeIndex` (`scheduleTime`)
+CREATE TABLE ekmd_region (
+   regionID int(11) NOT NULL,
+   active bit(1) NOT NULL,
+   lastUpdate bigint(20) NOT NULL,
+   scheduleTime bigint(20) NOT NULL,
+   scheduled bit(1) NOT NULL,
+   PRIMARY KEY (regionID),
+   KEY regionIndex (regionID),
+   KEY activeIndex (active),
+   KEY lastUpdateIndex (lastUpdate),
+   KEY scheduledIndex (scheduled),
+   KEY scheduleTimeIndex (scheduleTime)
  ); 
 ```
 
@@ -172,13 +176,17 @@ We normally build the module using [Maven](http://maven.apache.org).  The pom.xm
 
 The MarketDownloader tool has no command line arguments (all configuration is determined from the properties file) and can be invoked from Maven as follows:
 
-```mvn exec:java -Dexec.mainClass="enterprises.orbital.evekit.marketdata.downloader.MarketDownloader"```
+```
+mvn exec:java -Dexec.mainClass="enterprises.orbital.evekit.marketdata.downloader.MarketDownloader"
+```
 
-You can modify the ```logging.properties``` file as needed to view downloader progress.
+You can modify the `logging.properties` file as needed to view downloader progress.
 
 The GenerateBooks tool has the following usage:
 
-```GenerateBooks [-h] [-d <dir>] [-i intervalSizeInMin] [-w YYYY-MM-DD] [-p prefix] [-t booksPerCycle] [-m typeid]```
+```
+GenerateBooks [-h] [-d <dir>] [-i intervalSizeInMin] [-w YYYY-MM-DD] [-p prefix] [-t booksPerCycle] [-m typeid]
+```
 
 where (all arguments are optional):
 
@@ -187,16 +195,20 @@ where (all arguments are optional):
  * -i gives the sampling interval in minutes for the output files.  The default is 60.
  * -w gives the date for which consolidated books will be generated.  The default is the current date.
  * -p gives the prefix that will be added to each consolidated output file.  The default is "interval".
- * -t gives the number of threads to use for book file generation.  Each thread will build and output books for ```booksInParallel`` types.  The default is 1.
+ * -t gives the number of threads to use for book file generation.  Each thread will build and output books for `booksInParallel` types.  The default is 1.
  * -m if specified (may be specified multiple times), names an explicit type ID which should be output.  If no type IDs are specified, then consolidated books are output for all types.
 
 You can invoke this tool from Maven as follows:
 
-```mvn exec:java -Dexec.mainClass="enterprises.orbital.evekit.marketdata.generator.GenerateBooks" -Dexec.args="...args..."```
+```
+mvn exec:java -Dexec.mainClass="enterprises.orbital.evekit.marketdata.generator.GenerateBooks" -Dexec.args="...args..."
+```
 
 Finally, the GenerateMarketHistory tool has the following usage:
 
-```GenerateMarketHistory [-h] [-d <dir>] [-w YYYY-MM-DD] [-p prefix] [-t threads] [-m typeid] [-l YYYY-MM-DD]```
+```
+GenerateMarketHistory [-h] [-d <dir>] [-w YYYY-MM-DD] [-p prefix] [-t threads] [-m typeid] [-l YYYY-MM-DD]
+```
 
 where (all arguments are optional):
 
