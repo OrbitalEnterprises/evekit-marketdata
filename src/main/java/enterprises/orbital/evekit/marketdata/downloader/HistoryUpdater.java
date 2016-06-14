@@ -138,9 +138,10 @@ public class HistoryUpdater implements Runnable {
                                                        final int type)
     throws IOException {
     // Setup for history retrieval
-    // Href currently NOT discoverable from CREST root so we hand construct, e.g. https://crest-tq.eveonline.com/market/10000002/types/34/history/
-    String historyHref = OrbitalProperties.getGlobalProperty(MarketDownloader.PROP_CREST_ROOT, MarketDownloader.DFLT_CREST_ROOT) + "market/" + region
-        + "/types/" + type + "/history/";
+    // Example:
+    // https://crest.eveonline.com/market/10000002/history/?type=https://crest.eveonline.com/inventory/types/34/
+    String crestRoot = OrbitalProperties.getGlobalProperty(MarketDownloader.PROP_CREST_ROOT, MarketDownloader.DFLT_CREST_ROOT);
+    String historyHref = crestRoot + "market/" + region + "/history/?type=" + crestRoot + "inventory/types/" + type + "/";
     // Retrieve and populate first page of history
     URL root = new URL(historyHref);
     List<MarketHistory> toStore = new ArrayList<MarketHistory>();
