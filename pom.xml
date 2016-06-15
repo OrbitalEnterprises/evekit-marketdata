@@ -26,6 +26,7 @@
     <!-- CREST settings -->
     <enterprises.orbital.evekit.marketdata.crest.root>https://crest.eveonline.com/</enterprises.orbital.evekit.marketdata.crest.root>
     <enterprises.orbital.evekit.marketdata.crest.agent>YourApp/1.0 (https://yourpage; you@somewhere; )</enterprises.orbital.evekit.marketdata.crest.agent>
+    <enterprises.orbital.evekit.marketdata.crest.connectTimeout>300000</enterprises.orbital.evekit.marketdata.crest.connectTimeout>
     <!-- Downloader settings -->
     <enterprises.orbital.evekit.marketdata.historyDir>.</enterprises.orbital.evekit.marketdata.historyDir>
     <enterprises.orbital.evekit.marketdata.regionDir>.</enterprises.orbital.evekit.marketdata.regionDir>

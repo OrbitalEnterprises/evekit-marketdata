@@ -47,6 +47,9 @@ public class MarketDownloader {
   // CREST agent
   public static final String                     PROP_CREST_AGENT                      = "enterprises.orbital.evekit.marketdata.crest.agent";
   public static final String                     DFLT_CREST_AGENT                      = null;
+  // CREST connect timeout
+  public static final String                     PROP_CREST_CONNECT_TIMEOUT            = "enterprises.orbital.evekit.marketdata.crest.connectTimeout";
+  public static final int                        DFLT_CREST_CONNECT_TIMEOUT            = 300000;
   // Interval between instrument and region updates against CREST reference data
   public static final String                     PROP_REF_UPDATE_INTERVAL              = "enterprises.orbital.evekit.marketdata.refUpdateInt";
   public static final long                       DFLT_REF_UPDATE_INTERVAL              = TimeUnit.MILLISECONDS.convert(24, TimeUnit.HOURS);
@@ -132,9 +135,11 @@ public class MarketDownloader {
     // Create CREST request thread pool
     int poolSize = (int) OrbitalProperties.getLongGlobalProperty(PROP_MAX_URL_RETR_POOL, DFLT_MAX_URL_RETR_POOL);
     urlRetrieverPool = Executors.newFixedThreadPool(poolSize);
-    // Set CREST agent if present
+    // Set CREST settings
     String agent = OrbitalProperties.getGlobalProperty(PROP_CREST_AGENT, DFLT_CREST_AGENT);
     if (agent != null) CRESTClient.setAgent(agent);
+    int connectTimeout = (int) OrbitalProperties.getLongGlobalProperty(PROP_CREST_CONNECT_TIMEOUT, DFLT_CREST_CONNECT_TIMEOUT);
+    if (connectTimeout > 0) CRESTClient.setConnectTimeout(connectTimeout);
     // Force initial instrument and region refresh
     refreshInstrumentMap();
     refreshRegionMap();

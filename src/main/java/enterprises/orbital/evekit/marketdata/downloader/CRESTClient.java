@@ -18,25 +18,31 @@ import javax.json.JsonReader;
  * 
  */
 public class CRESTClient {
-  protected static String           agent       = null;
-  protected static boolean          keepHeaders = false;
+  protected static String           agent          = null;
+  protected static boolean          keepHeaders    = false;
+  protected static int              connectTimeout = -1;
   private URL                       root;
-  private CRESTClient               parent      = null;
-  private CRESTClient               next        = null;
-  private CRESTClient               prev        = null;
+  private CRESTClient               parent         = null;
+  private CRESTClient               next           = null;
+  private CRESTClient               prev           = null;
   private JsonObject                data;
-  private Map<String, List<String>> headers     = null;
+  private Map<String, List<String>> headers        = null;
   // NOTE: synchronization not important since data is essentially immutable. At worst, we may be wasteful and have duplicate clients for the same down link.
-  private Map<URL, CRESTClient>     downMap     = new HashMap<URL, CRESTClient>();
+  private Map<URL, CRESTClient>     downMap        = new HashMap<URL, CRESTClient>();
 
   public static void setAgent(
                               String a) {
-    agent = a;
+    CRESTClient.agent = a;
   }
 
   public static void setKeepHeaders(
                                     boolean k) {
-    keepHeaders = k;
+    CRESTClient.keepHeaders = k;
+  }
+
+  public static void setConnectTimeout(
+                                       int connectTimeout) {
+    CRESTClient.connectTimeout = connectTimeout;
   }
 
   public CRESTClient(URL root) throws IOException {
@@ -53,6 +59,8 @@ public class CRESTClient {
   private void populate() throws IOException {
     HttpURLConnection conn = (HttpURLConnection) root.openConnection();
     if (agent != null) conn.setRequestProperty("User-Agent", agent);
+    if (connectTimeout > 0) conn.setConnectTimeout(connectTimeout);
+    conn.setUseCaches(true);
     JsonReader reader = Json.createReader(new InputStreamReader(root.openStream()));
     if (keepHeaders) headers = conn.getHeaderFields();
     data = reader.readObject();
