@@ -556,7 +556,10 @@ public class MarketDownloader {
               CRESTClient client = new CRESTClient(next);
               return client.getData();
             } catch (IOException e) {
+              log.log(Level.WARNING, "Caught exception connecting to " + next + ", will retry shortly", e);
               last = e;
+              // Sleep briefly before retry
+              Thread.sleep(3000);
             }
           }
           assert last != null;
