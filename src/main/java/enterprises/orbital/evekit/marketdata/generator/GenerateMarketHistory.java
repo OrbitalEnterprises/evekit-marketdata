@@ -15,7 +15,9 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
@@ -226,6 +228,9 @@ public class GenerateMarketHistory {
     String historyDir = OrbitalProperties.getGlobalProperty(PROP_HISTORY_DIR, DFLT_HISTORY_DIR) + File.separator + "history" + File.separator
         + String.valueOf(typeID);
     File historyDirFile = new File(historyDir);
+    // Extract the set of history files to process for the snap date.
+    // If a region appears more than once, then use the later file.
+    Map<Integer, File> regionFiles = new HashMap<>();
     for (File nextRegion : historyDirFile.listFiles(new FilenameFilter() {
 
       @Override
@@ -235,6 +240,24 @@ public class GenerateMarketHistory {
         return name.endsWith("_" + snapDate + ".gz");
       }
     })) {
+      String[] fields = nextRegion.getName().split("_");
+      int regionID = Integer.valueOf(fields[2]);
+      long fileSnapTime = Long.valueOf(fields[1]);
+      if (regionFiles.containsKey(regionID)) {
+        // Check whether current file is older
+        File current = regionFiles.get(regionID);
+        fields = current.getName().split("_");
+        long currentSnapTime = Long.valueOf(fields[1]);
+        if (fileSnapTime > currentSnapTime) {
+          // replace
+          regionFiles.put(regionID, nextRegion);
+        }
+      } else {
+        regionFiles.put(regionID, nextRegion);
+      }
+    }
+    // Process region files
+    for (File nextRegion : regionFiles.values()) {
       String[] fields = nextRegion.getName().split("_");
       int regionID = Integer.valueOf(fields[2]);
       try (LineNumberReader reader = new LineNumberReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(nextRegion))))) {
