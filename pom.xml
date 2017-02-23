@@ -7,7 +7,7 @@
   </parent>
   <groupId>enterprises.orbital.evekit</groupId>
   <artifactId>marketdata</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.0.2-SNAPSHOT</version>
   <packaging>jar</packaging>
   <name>EveKit Market Data Scraper</name>
   <description>Downloads EVE Online market data book view and history.  Provides tools to convert raw downloads into files fit for market data analysis.</description>
@@ -30,6 +30,7 @@
     <!-- Downloader settings -->
     <enterprises.orbital.evekit.marketdata.historyDir>.</enterprises.orbital.evekit.marketdata.historyDir>
     <enterprises.orbital.evekit.marketdata.regionDir>.</enterprises.orbital.evekit.marketdata.regionDir>
+    <enterprises.orbital.evekit.marketdata.priceDir>.</enterprises.orbital.evekit.marketdata.priceDir>
     <enterprises.orbital.evekit.marketdata.historyThreads>10</enterprises.orbital.evekit.marketdata.historyThreads>
     <enterprises.orbital.evekit.marketdata.regionThreads>4</enterprises.orbital.evekit.marketdata.regionThreads>
     <enterprises.orbital.evekit.marketdata.refUpdateInt>86400000</enterprises.orbital.evekit.marketdata.refUpdateInt>
@@ -37,6 +38,7 @@
     <enterprises.orbital.evekit.marketdata.regionStuckInt>600000</enterprises.orbital.evekit.marketdata.regionStuckInt>
     <enterprises.orbital.evekit.marketdata.minRegionSchedInterval>300000</enterprises.orbital.evekit.marketdata.minRegionSchedInterval>
     <enterprises.orbital.evekit.marketdata.minHistorySchedInterval>72000000</enterprises.orbital.evekit.marketdata.minHistorySchedInterval>
+    <enterprises.orbital.evekit.marketdata.minPriceSchedInterval>72000000</enterprises.orbital.evekit.marketdata.minPriceSchedInterval>
     <enterprises.orbital.evekit.marketdata.maxURLPool>20</enterprises.orbital.evekit.marketdata.maxURLPool>
     <!-- Generator settings -->
     <enterprises.orbital.evekit.marketdata.booksInParallel>10</enterprises.orbital.evekit.marketdata.booksInParallel>
@@ -55,6 +57,7 @@
     <glassfish.json.version>1.0.4</glassfish.json.version>
     <javax.json.version>1.0</javax.json.version>
     <orbital.toolchain.version>2.0.0</orbital.toolchain.version>
+    <orbital.esi.client.version>1.0.0.20170108</orbital.esi.client.version>
   </properties>
   
   <build>
@@ -72,6 +75,11 @@
       <groupId>enterprises.orbital</groupId>
       <artifactId>db-manager</artifactId>
       <version>${orbital.toolchain.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>enterprises.orbital.eve.esi</groupId>
+      <artifactId>client</artifactId>
+      <version>${orbital.esi.client.version}</version>
     </dependency>
     <dependency>
       <groupId>javax.json</groupId>

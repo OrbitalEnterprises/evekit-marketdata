@@ -62,6 +62,9 @@ public class MarketDownloader {
   // Directory where raw history files will be stored
   public static final String                     PROP_HISTORY_DIR                      = "enterprises.orbital.evekit.marketdata.historyDir";
   public static final String                     DFLT_HISTORY_DIR                      = "";
+  // Directory where raw price files will be stored
+  public static final String                     PROP_PRICE_DIR                        = "enterprises.orbital.evekit.marketdata.priceDir";
+  public static final String                     DFLT_PRICE_DIR                        = "";
   // Directory where raw region files will be stored
   public static final String                     PROP_REGION_DIR                       = "enterprises.orbital.evekit.marketdata.regionDir";
   public static final String                     DFLT_REGION_DIR                       = "";
@@ -71,6 +74,9 @@ public class MarketDownloader {
   // Minimum delay between history data refreshes
   public static final String                     PROP_MIN_HISTORY_SCHED_INTERVAL       = "enterprises.orbital.evekit.marketdata.minHistorySchedInterval";
   public static final long                       DFLT_MIN_HISTORY_SCHED_INTERVAL       = TimeUnit.MILLISECONDS.convert(20, TimeUnit.HOURS);
+  // Minimum delay between price data refreshes
+  public static final String                     PROP_MIN_PRICE_SCHED_INTERVAL         = "enterprises.orbital.evekit.marketdata.minPriceSchedInterval";
+  public static final long                       DFLT_MIN_PRICE_SCHED_INTERVAL         = TimeUnit.MILLISECONDS.convert(20, TimeUnit.HOURS);
   // Max number of threads to use for CREST http requests
   public static final String                     PROP_MAX_URL_RETR_POOL                = "enterprises.orbital.evekit.marketdata.maxURLPool";
   public static final int                        DFLT_MAX_URL_RETR_POOL                = 20;
@@ -84,6 +90,9 @@ public class MarketDownloader {
   // Histogram: samples are in seconds, bucket size is 1 hour, max is 24 hours
   public static final Histogram                  all_history_update_samples            = Histogram.build().name("all_history_update_delay_seconds")
       .help("Interval (seconds) between history updates for all instruments.").linearBuckets(0, 3600, 24).register();
+  // Histogram: samples are in seconds, bucket size is 1 hour, max is 24 hours
+  public static final Histogram                  all_price_update_samples              = Histogram.build().name("all_price_update_delay_seconds")
+      .help("Interval (seconds) between price updates for all instruments.").linearBuckets(0, 3600, 24).register();
   // Histogram: samples are in seconds, bucket size is one minute, max is 4 hours
   public static final Histogram                  all_region_update_samples             = Histogram.build().name("all_region_update_delay_seconds")
       .help("Interval (seconds) between updates for all regions.").linearBuckets(0, 60, 240).register();
@@ -93,6 +102,9 @@ public class MarketDownloader {
   // Histogram: samples are in seconds, bucket size is 10 seconds, max is 2 minutes
   public static final Histogram                  all_history_download_samples          = Histogram.build().name("all_history_download_delay_seconds")
       .help("Interval (seconds) between updates for all market history requests.").linearBuckets(0, 10, 120).register();
+  // Histogram: samples are in seconds, bucket size is 10 seconds, max is 2 minutes
+  public static final Histogram                  all_price_download_samples            = Histogram.build().name("all_price_download_delay_seconds")
+      .help("Interval (seconds) between updates for all market price requests.").linearBuckets(0, 10, 120).register();
   // Cache of regions to download
   protected static Set<Integer>                  regionMap                             = new HashSet<>();
   // Cache of types for which history will be fetched
@@ -157,6 +169,8 @@ public class MarketDownloader {
     for (int i = 0; i < historyThreads; i++) {
       (new Thread(new HistoryUpdater())).start();
     }
+    // Start a single threaded market price updater
+    (new Thread(new MarketPriceUpdater())).start();
     // The download doesn't terminate under normal circumstances. Ctrl-C to kill.
   }
 
