@@ -1,8 +1,10 @@
 package enterprises.orbital.evekit.marketdata.generator;
 
 import java.io.File;
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -33,8 +35,8 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import enterprises.orbital.base.OrbitalProperties;
-import enterprises.orbital.base.PersistentProperty;
-import enterprises.orbital.db.DBPropertyProvider;
+// import enterprises.orbital.base.PersistentProperty;
+// import enterprises.orbital.db.DBPropertyProvider;
 import enterprises.orbital.evekit.marketdata.model.EveKitMarketDataProvider;
 import enterprises.orbital.evekit.marketdata.model.Instrument;
 import enterprises.orbital.evekit.marketdata.model.Order;
@@ -187,16 +189,22 @@ public class GenerateBooks {
   // Regions to iterate over - pulled from DB
   protected static Set<Integer> regionSet = new HashSet<Integer>();
 
-  protected static void buildTypeSet() throws IOException, ExecutionException {
-    typeSet.addAll(Instrument.getActiveTypeIDs());
+  protected static void buildTypeSet(String typeFile) throws IOException, ExecutionException {
+    BufferedReader in = new BufferedReader(new FileReader(typeFile));
+    for (String nextLine = in.readLine(); nextLine != null; nextLine = in.readLine()) {
+	typeSet.add(Integer.valueOf(nextLine));
+    }
   }
 
-  protected static void buildRegionSet() throws IOException, ExecutionException {
-    regionSet.addAll(Region.getActiveRegionIDs());
+  protected static void buildRegionSet(String regionFile) throws IOException, ExecutionException {
+    BufferedReader in = new BufferedReader(new FileReader(regionFile));
+    for (String nextLine = in.readLine(); nextLine != null; nextLine = in.readLine()) {
+	regionSet.add(Integer.valueOf(nextLine));
+    }
   }
 
   protected static void usage() {
-    System.err.println("Usage: GenerateBooks [-h] [-d <dir>] [-i intervalSizeInMin] [-w YYYY-MM-DD] [-p prefix] [-t booksPerCycle] [-m typeid]");
+    System.err.println("Usage: GenerateBooks [-h] [-d <dir>] [-i intervalSizeInMin] [-w YYYY-MM-DD] [-p prefix] [-t booksPerCycle] [-m typeid] -r regionFile -b typeFile");
     System.exit(0);
   }
 
@@ -204,14 +212,14 @@ public class GenerateBooks {
                           String[] argv)
     throws Exception {
     OrbitalProperties.addPropertyFile("EveKitMarketdata.properties");
-    PersistentProperty.setProvider(new DBPropertyProvider(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.PROP_MARKETDATA_PU)));
-    buildTypeSet();
-    buildRegionSet();
+    // PersistentProperty.setProvider(new DBPropertyProvider(OrbitalProperties.getGlobalProperty(EveKitMarketDataProvider.PROP_MARKETDATA_PU)));
     Date defaultDate = Calendar.getInstance(TimeZone.getTimeZone("UTC")).getTime();
     String defaultDirectory = ".";
     long defaultInterval = TimeUnit.MINUTES.convert(1, TimeUnit.HOURS);
     String defaultPrefix = "interval";
     int defaultThreads = 1;
+    String regionFile = null;
+    String typeFile = null;
     Set<Integer> types = new HashSet<Integer>();
     for (int i = 0; i < argv.length; i++) {
       if (argv[i].equals("-h"))
@@ -241,9 +249,21 @@ public class GenerateBooks {
         i++;
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
         defaultDate = formatter.parse(argv[i]);
+      } else if (argv[i].equals("-r")) {
+	if (i + 1 == argv.length) usage();
+	i++;
+	regionFile = argv[i];
+      } else if (argv[i].equals("-b")) {
+	if (i + 1 == argv.length) usage();
+	i++;
+	typeFile = argv[i];
       } else
         usage();
     }
+    if (typeFile == null || regionFile == null)
+      usage();
+    buildTypeSet(typeFile);
+    buildRegionSet(regionFile);
     dumpRegions(defaultDate, new File(defaultDirectory), defaultPrefix, defaultInterval, defaultThreads, types);
   }
 
